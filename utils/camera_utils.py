@@ -112,15 +112,34 @@ class Camera(nn.Module):
         self.T = t.to(device=self.device)
 
     def compute_grad_mask(self, config):
+        """preprocessing step in an image processing or computer vision algorithm, 
+        where the gradient mask can be used to highlight the edges in the image."""
+        
+        #prendo la soglia del bordo dal file di configurazione
         edge_threshold = config["Training"]["edge_threshold"]
 
+        #converto l'immagine in B/N prendendo la media del 
+        #canale di colore
         gray_img = self.original_image.mean(dim=0, keepdim=True)
+        #calcolo il gradiente verticale e orizzontale dell'immagine
+        #usando image gradient  
         gray_grad_v, gray_grad_h = image_gradient(gray_img)
+        #calcolo il gradiente verticale e orizzontale dell'immagine
         mask_v, mask_h = image_gradient_mask(gray_img)
+        #applica gradient mask al corrispondente gradiente 
         gray_grad_v = gray_grad_v * mask_v
         gray_grad_h = gray_grad_h * mask_h
+        #It computes the gradient intensity of the image by 
+        # taking the square root of the sum of the squares of 
+        # the vertical and horizontal gradients.
         img_grad_intensity = torch.sqrt(gray_grad_v**2 + gray_grad_h**2)
 
+        # If the dataset type is "replica", it divides the image 
+        # into blocks of size 32x32 and for each block, 
+        # it computes the median of the gradient intensities. 
+        # It then sets the gradient mask to 1 for pixels where 
+        # the gradient intensity is greater than the median times 
+        # the edge_threshold, and 0 otherwise.
         if config["Dataset"]["type"] == "replica":
             row, col = 32, 32
             multiplier = edge_threshold
@@ -136,8 +155,13 @@ class Camera(nn.Module):
                     block[block > (th_median * multiplier)] = 1
                     block[block <= (th_median * multiplier)] = 0
             self.grad_mask = img_grad_intensity
+        # Else it computes the median of the gradient intensities 
+        # for the entire image and sets the gradient mask to 1 
+        # for pixels where the gradient intensity is greater than 
+        # the median times the edge_threshold, and 0 otherwise.  
         else:
             median_img_grad_intensity = img_grad_intensity.median()
+            #salvo la maschera dei gradienti in grad_mask
             self.grad_mask = (
                 img_grad_intensity > median_img_grad_intensity * edge_threshold
             )

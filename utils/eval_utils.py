@@ -46,6 +46,9 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ) as f:
         json.dump(ape_stats, f, indent=4)
 
+    print("\tEseguito il dump")
+    # Creo il grafico e lo salvo in png
+    # Per funzionare ci vuole matplotlib==3.5.3, altrimenti da errore
     plot_mode = evo.tools.plot.PlotMode.xy
     fig = plt.figure()
     ax = evo.tools.plot.prepare_axis(fig, plot_mode)
@@ -61,7 +64,7 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     )
     ax.legend()
     plt.savefig(os.path.join(plot_dir, "evo_2dplot_{}.png".format(str(label))), dpi=90)
-
+    
     return ape_stat
 
 
@@ -79,6 +82,7 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
 
     for kf_id in kf_ids:
         kf = frames[kf_id]
+        #La pose viene calcolata come l'inverso della matrice di rototraslazione
         pose_est = np.linalg.inv(gen_pose_matrix(kf.R, kf.T))
         pose_gt = np.linalg.inv(gen_pose_matrix(kf.R_gt, kf.T_gt))
 
@@ -181,6 +185,11 @@ def eval_rendering(
 
 
 def save_gaussians(gaussians, name, iteration, final=False):
+    """
+    Salvo la point cloud in un file .ply. 
+    Per visualizzare la point cloud utilizza il seguente sito: 
+    https://antimatter15.com/splat/ Caricare ilm file ply e viene visualizzato
+    """
     if name is None:
         return
     if final:

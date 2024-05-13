@@ -23,8 +23,8 @@ class FrontEnd(mp.Process):
         self.pipeline_params = None
         self.frontend_queue = None
         self.backend_queue = None
-        self.q_main2vis = None
-        self.q_vis2main = None
+        self.q_main2vis = None # coda impostatata in slam.py
+        self.q_vis2main = None # coda impostatata in slam.py
 
         self.initialized = False
         self.kf_indices = []
@@ -126,7 +126,10 @@ class FrontEnd(mp.Process):
         self.reset = False
 
     def tracking(self, cur_frame_idx, viewpoint):
+        """Ho la fase di tracking spiegata nel paper"""
         prev = self.cameras[cur_frame_idx - self.use_every_n_frames]
+        
+        #aggiorno la matrice di rototraslazione del viewpoint 
         viewpoint.update_RT(prev.R, prev.T)
 
         opt_params = []
@@ -159,9 +162,14 @@ class FrontEnd(mp.Process):
             }
         )
 
+        #ottimizzo la pose usando l'algoritmo di Adam 
         pose_optimizer = torch.optim.Adam(opt_params)
+        start_event = torch.cuda.Event(enable_timing=True)
+        end_event = torch.cuda.Event(enable_timing=True)
+
+        start_event.record()
         for tracking_itr in range(self.tracking_itr_num):
-            render_pkg = render(
+            render_pkg = render( # rendero la scena 
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
             image, depth, opacity = (
@@ -191,7 +199,12 @@ class FrontEnd(mp.Process):
                 )
             if converged:
                 break
+         
+        end_event.record()
+        # Wait for the events to be recorded
+        torch.cuda.synchronize()
 
+        print(f"Tracking loop took {start_event.elapsed_time(end_event) / 1000} seconds") 
         self.median_depth = get_median_depth(depth, opacity)
         return render_pkg
 
@@ -289,6 +302,7 @@ class FrontEnd(mp.Process):
         msg = ["keyframe", cur_frame_idx, viewpoint, current_window, depthmap]
         self.backend_queue.put(msg)
         self.requested_keyframe += 1
+        print("REQUEST KEYFRAME ",self.requested_keyframe)
 
     def reqeust_mapping(self, cur_frame_idx, viewpoint):
         msg = ["map", cur_frame_idx, viewpoint]
@@ -370,18 +384,25 @@ class FrontEnd(mp.Process):
                 if not self.initialized and self.requested_keyframe > 0:
                     time.sleep(0.01)
                     continue
-
+                
+                # setto il punto di vista della camera al current frame 
+                start_camera_time = time.perf_counter()
                 viewpoint = Camera.init_from_dataset(
                     self.dataset, cur_frame_idx, projection_matrix
                 )
                 viewpoint.compute_grad_mask(self.config)
 
                 self.cameras[cur_frame_idx] = viewpoint
+                end_camera_time = time.perf_counter()
 
+                execution_time = end_camera_time - start_camera_time
+                print("Camera time: ", execution_time, " seconds")
                 if self.reset:
+                    print("Sono in if self.reset")
                     self.initialize(cur_frame_idx, viewpoint)
                     self.current_window.append(cur_frame_idx)
                     cur_frame_idx += 1
+                    print("frame idx = ", str(cur_frame_idx))
                     continue
 
                 self.initialized = self.initialized or (
@@ -465,6 +486,7 @@ class FrontEnd(mp.Process):
                     and len(self.kf_indices) % self.save_trj_kf_intv == 0
                 ):
                     Log("Evaluating ATE at frame: ", cur_frame_idx)
+                    start_time_eval = time.perf_counter()
                     eval_ate(
                         self.cameras,
                         self.kf_indices,
@@ -472,11 +494,15 @@ class FrontEnd(mp.Process):
                         cur_frame_idx,
                         monocular=self.monocular,
                     )
+                    end_time_eval = time.perf_counter()
+                    print("ATE evaluation time: [s]", end_time_eval - start_time_eval)
                 toc.record()
                 torch.cuda.synchronize()
                 if create_kf:
                     # throttle at 3fps when keyframe is added
+                    #print("sono if create_kf ")
                     duration = tic.elapsed_time(toc)
+                    print("Duration SLAM Frontend = ", tic.elapsed_time(toc) / 1000.0)
                     time.sleep(max(0.01, 1.0 / 3.0 - duration / 1000))
             else:
                 data = self.frontend_queue.get()

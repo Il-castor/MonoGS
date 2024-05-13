@@ -2,7 +2,7 @@ import torch
 
 
 def image_gradient(image):
-    # Compute image gradient using Scharr Filter
+    """Compute image gradient using Scharr Filter """
     c = image.shape[0]
     conv_y = torch.tensor(
         [[3, 0, -3], [10, 0, -10], [3, 0, -3]], dtype=torch.float32, device="cuda"
@@ -22,7 +22,7 @@ def image_gradient(image):
 
 
 def image_gradient_mask(image, eps=0.01):
-    # Compute image gradient mask
+    """Compute image gradient mask"""
     c = image.shape[0]
     conv_y = torch.ones((1, 1, 3, 3), dtype=torch.float32, device="cuda")
     conv_x = torch.ones((1, 1, 3, 3), dtype=torch.float32, device="cuda")

@@ -1,6 +1,8 @@
 import random
 import time
+import statistics
 
+from numpy import median
 import torch
 import torch.multiprocessing as mp
 from tqdm import tqdm
@@ -38,7 +40,9 @@ class BackEnd(mp.Process):
         self.initialized = not self.monocular
         self.keyframe_optimizers = None
 
-    def set_hyperparams(self):
+    def set_hyperparams(self): 
+        """Setto i parametri di training del backend che 
+        leggo dal file base di configurazione"""
         self.save_results = self.config["Results"]["save_results"]
 
         self.init_itr_num = self.config["Training"]["init_itr_num"]
@@ -65,6 +69,7 @@ class BackEnd(mp.Process):
         )
 
     def add_next_kf(self, frame_idx, viewpoint, init=False, scale=2.0, depth_map=None):
+        """Aggiungo il prossimo keyframe """
         self.gaussians.extend_from_pcd_seq(
             viewpoint, kf_id=frame_idx, init=init, scale=scale, depthmap=depth_map
         )
@@ -84,6 +89,8 @@ class BackEnd(mp.Process):
             self.backend_queue.get()
 
     def initialize_map(self, cur_frame_idx, viewpoint):
+        """Inizializzo la mappa """
+        #print("Inizializzo la mappa")
         for mapping_iteration in range(self.init_itr_num):
             self.iteration_count += 1
             render_pkg = render(
@@ -140,13 +147,18 @@ class BackEnd(mp.Process):
         return render_pkg
 
     def map(self, current_window, prune=False, iters=1):
+
+        start_time_map_function = time.perf_counter()
         if len(current_window) == 0:
             return
+        #print("type current window: ", type(current_window))
+        # print("current window: ", current_window)
 
         viewpoint_stack = [self.viewpoints[kf_idx] for kf_idx in current_window]
         random_viewpoint_stack = []
         frames_to_optimize = self.config["Training"]["pose_window"]
 
+        # converto la lista current window in un set per togliere i duplicati
         current_window_set = set(current_window)
         for cam_idx, viewpoint in self.viewpoints.items():
             if cam_idx in current_window_set:
@@ -165,12 +177,18 @@ class BackEnd(mp.Process):
 
             keyframes_opt = []
 
+            # render_times = []
             for cam_idx in range(len(current_window)):
                 viewpoint = viewpoint_stack[cam_idx]
                 keyframes_opt.append(viewpoint)
+
+                start_time = time.perf_counter()
                 render_pkg = render(
                     viewpoint, self.gaussians, self.pipeline_params, self.background
                 )
+                # end_time = time.perf_counter()
+                # render_times.append(end_time - start_time)
+
                 (
                     image,
                     viewspace_point_tensor,
@@ -196,6 +214,9 @@ class BackEnd(mp.Process):
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
                 n_touched_acm.append(n_touched)
+
+            # median_render_time = statistics.median(render_times)
+            # print("render times [s]: ", median_render_time)
 
             for cam_idx in torch.randperm(len(random_viewpoint_stack))[:2]:
                 viewpoint = random_viewpoint_stack[cam_idx]
@@ -232,6 +253,7 @@ class BackEnd(mp.Process):
             loss_mapping.backward()
             gaussian_split = False
             ## Deinsifying / Pruning Gaussians
+            start_time_dens_pruning = time.perf_counter()
             with torch.no_grad():
                 self.occ_aware_visibility = {}
                 for idx in range((len(current_window))):
@@ -315,6 +337,10 @@ class BackEnd(mp.Process):
                     if viewpoint.uid == 0:
                         continue
                     update_pose(viewpoint)
+            end_time_dens_pruning = time.perf_counter()
+            #print("TIME DENS PRUNING: [s] ", end_time_dens_pruning - start_time_dens_pruning)
+        end_time_map_function = time.perf_counter()
+        #print("function TIME MAP FUNCTION: [s] ", end_time_map_function - start_time_map_function)   
         return gaussian_split
 
     def color_refinement(self):
@@ -353,6 +379,7 @@ class BackEnd(mp.Process):
         Log("Map refinement done")
 
     def push_to_frontend(self, tag=None):
+        """Mando i dati al fronted per la visualizzazione """
         self.last_sent = 0
         keyframes = []
         for kf_idx in self.current_window:
@@ -377,8 +404,14 @@ class BackEnd(mp.Process):
                 if self.single_thread:
                     time.sleep(0.01)
                     continue
+
+                time_start_run_mapping = time.perf_counter()
                 self.map(self.current_window)
+                time_stop_run_mapping = time.perf_counter()
+                #print("TIME RUN MAPPING: [s] ", time_stop_run_mapping - time_start_run_mapping)
+
                 if self.last_sent >= 10:
+                    
                     self.map(self.current_window, prune=True, iters=10)
                     self.push_to_frontend()
             else:
@@ -400,10 +433,18 @@ class BackEnd(mp.Process):
                     self.reset()
 
                     self.viewpoints[cur_frame_idx] = viewpoint
+                    time_start_add_next_kf = time.perf_counter()
                     self.add_next_kf(
                         cur_frame_idx, viewpoint, depth_map=depth_map, init=True
                     )
+                    time_end_add_next_kf = time.perf_counter()
+                    print("init state ADD NEXT KF TIME: ", time_end_add_next_kf - time_start_add_next_kf)
+
+                    time_start_initialize_map = time.perf_counter()
                     self.initialize_map(cur_frame_idx, viewpoint)
+                    end_time_initialize_map = time.perf_counter()
+                    print("TIME INITIALIZE MAP: [s] ", end_time_initialize_map - time_start_initialize_map)
+
                     self.push_to_frontend("init")
 
                 elif data[0] == "keyframe":
@@ -414,23 +455,23 @@ class BackEnd(mp.Process):
 
                     self.viewpoints[cur_frame_idx] = viewpoint
                     self.current_window = current_window
+                    time_start_adding_next_kf = time.perf_counter()
                     self.add_next_kf(cur_frame_idx, viewpoint, depth_map=depth_map)
+                    time_stop_adding_next_kf = time.perf_counter()
+                    print("keyframe state ADD NEXT KF TIME: ", time_stop_adding_next_kf - 
+                          time_start_adding_next_kf)
 
                     opt_params = []
                     frames_to_optimize = self.config["Training"]["pose_window"]
                     iter_per_kf = self.mapping_itr_num if self.single_thread else 10
                     if not self.initialized:
-                        if (
-                            len(self.current_window)
-                            == self.config["Training"]["window_size"]
-                        ):
-                            frames_to_optimize = (
-                                self.config["Training"]["window_size"] - 1
-                            )
+                        if (len(self.current_window) == self.config["Training"]["window_size"] ):
+                            frames_to_optimize = (self.config["Training"]["window_size"] - 1 )
                             iter_per_kf = 50 if self.live_mode else 300
                             Log("Performing initial BA for initialization")
                         else:
                             iter_per_kf = self.mapping_itr_num
+
                     for cam_idx in range(len(self.current_window)):
                         if self.current_window[cam_idx] == 0:
                             continue
@@ -468,6 +509,7 @@ class BackEnd(mp.Process):
                                 "name": "exposure_b_{}".format(viewpoint.uid),
                             }
                         )
+
                     self.keyframe_optimizers = torch.optim.Adam(opt_params)
 
                     self.map(self.current_window, iters=iter_per_kf)
