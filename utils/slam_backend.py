@@ -246,7 +246,8 @@ class BackEnd(mp.Process):
                 viewspace_point_tensor_acm.append(viewspace_point_tensor)
                 visibility_filter_acm.append(visibility_filter)
                 radii_acm.append(radii)
-
+            
+            #punto 3.3.3 del paper per calcolare la isotropic regularization
             scaling = self.gaussians.get_scaling
             isotropic_loss = torch.abs(scaling - scaling.mean(dim=1).view(-1, 1))
             loss_mapping += 10 * isotropic_loss.mean()

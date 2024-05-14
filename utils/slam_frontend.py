@@ -44,6 +44,7 @@ class FrontEnd(mp.Process):
         self.pause = False
 
     def set_hyperparams(self):
+        """Setta i parametri di training e di salvataggio dei risultati"""
         self.save_dir = self.config["Results"]["save_dir"]
         self.save_results = self.config["Results"]["save_results"]
         self.save_trj = self.config["Results"]["save_trj"]
@@ -164,10 +165,7 @@ class FrontEnd(mp.Process):
 
         #ottimizzo la pose usando l'algoritmo di Adam 
         pose_optimizer = torch.optim.Adam(opt_params)
-        start_event = torch.cuda.Event(enable_timing=True)
-        end_event = torch.cuda.Event(enable_timing=True)
-
-        start_event.record()
+         
         for tracking_itr in range(self.tracking_itr_num):
             render_pkg = render( # rendero la scena 
                 viewpoint, self.gaussians, self.pipeline_params, self.background
@@ -199,12 +197,7 @@ class FrontEnd(mp.Process):
                 )
             if converged:
                 break
-         
-        end_event.record()
-        # Wait for the events to be recorded
-        torch.cuda.synchronize()
-
-        print(f"Tracking loop took {start_event.elapsed_time(end_event) / 1000} seconds") 
+          
         self.median_depth = get_median_depth(depth, opacity)
         return render_pkg
 
@@ -215,6 +208,7 @@ class FrontEnd(mp.Process):
         cur_frame_visibility_filter,
         occ_aware_visibility,
     ):
+        """Check if the current frame should be a keyframe. Come nel paper"""
         kf_translation = self.config["Training"]["kf_translation"]
         kf_min_translation = self.config["Training"]["kf_min_translation"]
         kf_overlap = self.config["Training"]["kf_overlap"]
@@ -397,12 +391,13 @@ class FrontEnd(mp.Process):
 
                 execution_time = end_camera_time - start_camera_time
                 print("Camera time: ", execution_time, " seconds")
+
                 if self.reset:
-                    print("Sono in if self.reset")
+                    #print("Sono in if self.reset")
                     self.initialize(cur_frame_idx, viewpoint)
                     self.current_window.append(cur_frame_idx)
                     cur_frame_idx += 1
-                    print("frame idx = ", str(cur_frame_idx))
+                    #print("frame idx = ", str(cur_frame_idx))
                     continue
 
                 self.initialized = self.initialized or (
@@ -410,7 +405,10 @@ class FrontEnd(mp.Process):
                 )
 
                 # Tracking
+                time_end_is_keyframe = time.perf_counter()
                 render_pkg = self.tracking(cur_frame_idx, viewpoint)
+                end_time_tracking = time.perf_counter()
+                print("Tracking time: ", end_time_tracking - time_end_is_keyframe)
 
                 current_window_dict = {}
                 current_window_dict[self.current_window[0]] = self.current_window[1:]
@@ -433,12 +431,17 @@ class FrontEnd(mp.Process):
                 last_keyframe_idx = self.current_window[0]
                 check_time = (cur_frame_idx - last_keyframe_idx) >= self.kf_interval
                 curr_visibility = (render_pkg["n_touched"] > 0).long()
+
+                time_start_is_keyframe = time.perf_counter()
                 create_kf = self.is_keyframe(
                     cur_frame_idx,
                     last_keyframe_idx,
                     curr_visibility,
                     self.occ_aware_visibility,
                 )
+                time_end_is_keyframe = time.perf_counter()
+                print("is_keyframe time: ", time_end_is_keyframe - time_start_is_keyframe)
+
                 if len(self.current_window) < self.window_size:
                     union = torch.logical_or(
                         curr_visibility, self.occ_aware_visibility[last_keyframe_idx]
