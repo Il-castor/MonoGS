@@ -163,7 +163,7 @@ class FrontEnd(mp.Process):
             }
         )
 
-        #ottimizzo la pose usando l'algoritmo di Adam 
+        #ottimizzo la pose usando l'algoritmo di Adam (discesa del gradiente sui parametri)
         pose_optimizer = torch.optim.Adam(opt_params)
          
         for tracking_itr in range(self.tracking_itr_num):
@@ -296,7 +296,7 @@ class FrontEnd(mp.Process):
         msg = ["keyframe", cur_frame_idx, viewpoint, current_window, depthmap]
         self.backend_queue.put(msg)
         self.requested_keyframe += 1
-        print("REQUEST KEYFRAME ",self.requested_keyframe)
+        # print("REQUEST KEYFRAME ",self.requested_keyframe)
 
     def reqeust_mapping(self, cur_frame_idx, viewpoint):
         msg = ["map", cur_frame_idx, viewpoint]
@@ -322,6 +322,7 @@ class FrontEnd(mp.Process):
             torch.cuda.empty_cache()
 
     def run(self):
+        #print("INIZIO ", self.kf_indices)
         cur_frame_idx = 0
         projection_matrix = getProjectionMatrix2(
             znear=0.01,
@@ -351,9 +352,15 @@ class FrontEnd(mp.Process):
                     self.backend_queue.put(["unpause"])
 
             if self.frontend_queue.empty():
+                # print("1")
+                # print("len self.dataset = ", len(self.dataset))
                 tic.record()
                 if cur_frame_idx >= len(self.dataset):
+                    # print("2")
+                    
                     if self.save_results:
+                            # print("3")
+                            # print("slam frontend, kf_indices: ", self.kf_indices)
                         eval_ate(
                             self.cameras,
                             self.kf_indices,
@@ -387,10 +394,10 @@ class FrontEnd(mp.Process):
                 viewpoint.compute_grad_mask(self.config)
 
                 self.cameras[cur_frame_idx] = viewpoint
-                end_camera_time = time.perf_counter()
+                # end_camera_time = time.perf_counter()
 
-                execution_time = end_camera_time - start_camera_time
-                print("Camera time: ", execution_time, " seconds")
+                # execution_time = end_camera_time - start_camera_time
+                # print("Camera time: ", execution_time, " seconds")
 
                 if self.reset:
                     #print("Sono in if self.reset")
@@ -405,10 +412,10 @@ class FrontEnd(mp.Process):
                 )
 
                 # Tracking
-                time_end_is_keyframe = time.perf_counter()
+                # time_end_is_keyframe = time.perf_counter()
                 render_pkg = self.tracking(cur_frame_idx, viewpoint)
-                end_time_tracking = time.perf_counter()
-                print("Tracking time: ", end_time_tracking - time_end_is_keyframe)
+                # end_time_tracking = time.perf_counter()
+                # print("Tracking time: ", end_time_tracking - time_end_is_keyframe)
 
                 current_window_dict = {}
                 current_window_dict[self.current_window[0]] = self.current_window[1:]
@@ -432,15 +439,15 @@ class FrontEnd(mp.Process):
                 check_time = (cur_frame_idx - last_keyframe_idx) >= self.kf_interval
                 curr_visibility = (render_pkg["n_touched"] > 0).long()
 
-                time_start_is_keyframe = time.perf_counter()
+                # time_start_is_keyframe = time.perf_counter()
                 create_kf = self.is_keyframe(
                     cur_frame_idx,
                     last_keyframe_idx,
                     curr_visibility,
                     self.occ_aware_visibility,
                 )
-                time_end_is_keyframe = time.perf_counter()
-                print("is_keyframe time: ", time_end_is_keyframe - time_start_is_keyframe)
+                # time_end_is_keyframe = time.perf_counter()
+                # print("is_keyframe time: ", time_end_is_keyframe - time_start_is_keyframe)
 
                 if len(self.current_window) < self.window_size:
                     union = torch.logical_or(
@@ -489,7 +496,7 @@ class FrontEnd(mp.Process):
                     and len(self.kf_indices) % self.save_trj_kf_intv == 0
                 ):
                     Log("Evaluating ATE at frame: ", cur_frame_idx)
-                    start_time_eval = time.perf_counter()
+                    # start_time_eval = time.perf_counter()
                     eval_ate(
                         self.cameras,
                         self.kf_indices,
@@ -497,15 +504,15 @@ class FrontEnd(mp.Process):
                         cur_frame_idx,
                         monocular=self.monocular,
                     )
-                    end_time_eval = time.perf_counter()
-                    print("ATE evaluation time: [s]", end_time_eval - start_time_eval)
+                    # end_time_eval = time.perf_counter()
+                    # print("ATE evaluation time: [s]", end_time_eval - start_time_eval)
                 toc.record()
                 torch.cuda.synchronize()
                 if create_kf:
                     # throttle at 3fps when keyframe is added
                     #print("sono if create_kf ")
                     duration = tic.elapsed_time(toc)
-                    print("Duration SLAM Frontend = ", tic.elapsed_time(toc) / 1000.0)
+                    # print("Duration SLAM Frontend = ", tic.elapsed_time(toc) / 1000.0)
                     time.sleep(max(0.01, 1.0 / 3.0 - duration / 1000))
             else:
                 data = self.frontend_queue.get()

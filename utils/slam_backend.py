@@ -113,6 +113,12 @@ class BackEnd(mp.Process):
                 render_pkg["opacity"],
                 render_pkg["n_touched"],
             )
+            # print("fenicottero 1 ")
+            # print("image: ", type(image), image.shape)
+            # print("depth: ", type(depth), depth.shape)  
+            # print("viewpoint: ", type(viewpoint))
+            # print("opacity: ", type(opacity), opacity.shape)
+            # print("self.config: ", type(self.config)) 
             loss_init = get_loss_mapping(
                 self.config, image, depth, viewpoint, opacity, initialization=True
             )
@@ -148,7 +154,7 @@ class BackEnd(mp.Process):
 
     def map(self, current_window, prune=False, iters=1):
 
-        start_time_map_function = time.perf_counter()
+        # start_time_map_function = time.perf_counter()
         if len(current_window) == 0:
             return
         #print("type current window: ", type(current_window))
@@ -182,7 +188,7 @@ class BackEnd(mp.Process):
                 viewpoint = viewpoint_stack[cam_idx]
                 keyframes_opt.append(viewpoint)
 
-                start_time = time.perf_counter()
+                # start_time = time.perf_counter()
                 render_pkg = render(
                     viewpoint, self.gaussians, self.pipeline_params, self.background
                 )
@@ -206,7 +212,7 @@ class BackEnd(mp.Process):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
-
+                # print("fenicottero 2 ")
                 loss_mapping += get_loss_mapping(
                     self.config, image, depth, viewpoint, opacity
                 )
@@ -240,6 +246,7 @@ class BackEnd(mp.Process):
                     render_pkg["opacity"],
                     render_pkg["n_touched"],
                 )
+                # print("fenicottero 3 ")
                 loss_mapping += get_loss_mapping(
                     self.config, image, depth, viewpoint, opacity
                 )
@@ -254,7 +261,8 @@ class BackEnd(mp.Process):
             loss_mapping.backward()
             gaussian_split = False
             ## Deinsifying / Pruning Gaussians
-            start_time_dens_pruning = time.perf_counter()
+            # 
+            # start_time_dens_pruning = time.perf_counter()
             with torch.no_grad():
                 self.occ_aware_visibility = {}
                 for idx in range((len(current_window))):
@@ -338,9 +346,9 @@ class BackEnd(mp.Process):
                     if viewpoint.uid == 0:
                         continue
                     update_pose(viewpoint)
-            end_time_dens_pruning = time.perf_counter()
+            # end_time_dens_pruning = time.perf_counter()
             #print("TIME DENS PRUNING: [s] ", end_time_dens_pruning - start_time_dens_pruning)
-        end_time_map_function = time.perf_counter()
+        # end_time_map_function = time.perf_counter()
         #print("function TIME MAP FUNCTION: [s] ", end_time_map_function - start_time_map_function)   
         return gaussian_split
 
@@ -406,9 +414,9 @@ class BackEnd(mp.Process):
                     time.sleep(0.01)
                     continue
 
-                time_start_run_mapping = time.perf_counter()
+                # time_start_run_mapping = time.perf_counter()
                 self.map(self.current_window)
-                time_stop_run_mapping = time.perf_counter()
+                # time_stop_run_mapping = time.perf_counter()
                 #print("TIME RUN MAPPING: [s] ", time_stop_run_mapping - time_start_run_mapping)
 
                 if self.last_sent >= 10:
@@ -434,17 +442,17 @@ class BackEnd(mp.Process):
                     self.reset()
 
                     self.viewpoints[cur_frame_idx] = viewpoint
-                    time_start_add_next_kf = time.perf_counter()
+                    # time_start_add_next_kf = time.perf_counter()
                     self.add_next_kf(
                         cur_frame_idx, viewpoint, depth_map=depth_map, init=True
                     )
-                    time_end_add_next_kf = time.perf_counter()
-                    print("init state ADD NEXT KF TIME: ", time_end_add_next_kf - time_start_add_next_kf)
+                    # time_end_add_next_kf = time.perf_counter()
+                    # print("init state ADD NEXT KF TIME: ", time_end_add_next_kf - time_start_add_next_kf)
 
-                    time_start_initialize_map = time.perf_counter()
+                    # time_start_initialize_map = time.perf_counter()
                     self.initialize_map(cur_frame_idx, viewpoint)
-                    end_time_initialize_map = time.perf_counter()
-                    print("TIME INITIALIZE MAP: [s] ", end_time_initialize_map - time_start_initialize_map)
+                    # end_time_initialize_map = time.perf_counter()
+                    # print("TIME INITIALIZE MAP: [s] ", end_time_initialize_map - time_start_initialize_map)
 
                     self.push_to_frontend("init")
 
@@ -456,11 +464,11 @@ class BackEnd(mp.Process):
 
                     self.viewpoints[cur_frame_idx] = viewpoint
                     self.current_window = current_window
-                    time_start_adding_next_kf = time.perf_counter()
+                    # time_start_adding_next_kf = time.perf_counter()
                     self.add_next_kf(cur_frame_idx, viewpoint, depth_map=depth_map)
-                    time_stop_adding_next_kf = time.perf_counter()
-                    print("keyframe state ADD NEXT KF TIME: ", time_stop_adding_next_kf - 
-                          time_start_adding_next_kf)
+                    # time_stop_adding_next_kf = time.perf_counter()
+                    # print("keyframe state ADD NEXT KF TIME: ", time_stop_adding_next_kf - 
+                        #   time_start_adding_next_kf)
 
                     opt_params = []
                     frames_to_optimize = self.config["Training"]["pose_window"]

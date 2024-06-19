@@ -63,7 +63,6 @@ class SLAM:
         
         # training setup of the gaussians with cuda tensor 
         
-
         self.gaussians.training_setup(opt_params)
         bg_color = [0, 0, 0]
         self.background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")

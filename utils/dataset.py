@@ -8,6 +8,10 @@ import torch
 import trimesh
 from PIL import Image
 
+#import matplotlib.pyplot as plt
+from pathlib import Path
+
+
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
 try:
@@ -255,6 +259,8 @@ class MonocularDataset(BaseDataset):
         }
 
     def __getitem__(self, idx):
+        # print("FENI idx = ", idx)
+        # print("FENI self.poses = ", self.poses)
         color_path = self.color_paths[idx]
         pose = self.poses[idx]
 
@@ -264,10 +270,14 @@ class MonocularDataset(BaseDataset):
         if self.disorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
 
+        # print("FENI ha la depth => ", self.has_depth)
         if self.has_depth:
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
+            #print("Feni mono depth = ", depth)
 
+        # image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -389,6 +399,10 @@ class StereoDataset(BaseDataset):
             .to(device=self.device, dtype=self.dtype)
         )
         pose = torch.from_numpy(pose).to(device=self.device)
+        
+        # plt.imshow(depth, cmap='jet')
+        # plt.colorbar()
+        # plt.show()
 
         return image, depth, pose
 
@@ -518,6 +532,80 @@ class RealsenseDataset(BaseDataset):
 
         return image, depth, pose
 
+class KittiParser:
+    def __init__(self, sequence_dir):
+        self.sequence_dir = Path(sequence_dir)
+        self.image_0_dir = self.sequence_dir / 'image_0'
+        self.image_1_dir = self.sequence_dir / 'image_1'
+        self.times_file = self.sequence_dir / 'times.txt'
+        self.poses_file = self.sequence_dir.parent / 'poses' / f'{self.sequence_dir.name}.txt'
+        print("utilizzo poses file chiamato ", self.poses_file)
+        self.timestamps = self._load_timestamps()
+        self.poses = self._load_poses()
+
+        self.color_paths = sorted(self.image_0_dir.glob('*.png'))
+        self.color_paths_r = sorted(self.image_1_dir.glob('*.png'))
+        self.n_img = len(self.color_paths)
+        
+    def _load_timestamps(self):
+        with open(self.times_file, 'r') as file:
+            timestamps = [float(line.strip()) for line in file]
+        return timestamps
+
+    def _load_poses(self):
+        poses = []
+        if self.poses_file.exists():
+            with open(self.poses_file, 'r') as file:
+                for line in file:
+                    pose = np.fromstring(line.strip(), dtype=float, sep=' ')
+                    pose = pose.reshape(3, 4)  # Poses are 3x4 matrices
+                    pose = np.vstack((pose, [0, 0, 0, 1]))  # Convert to 4x4
+                    poses.append(pose)
+        else: 
+            print("ERROR No poses file found")
+            exit()
+        return poses
+
+    def get_image(self, index, cam=0):
+        if cam == 0:
+            image_file = self.image_0_dir / f'{index:06d}.png'
+        else:
+            image_file = self.image_1_dir / f'{index:06d}.png'
+        return Image.open(image_file)
+
+    def get_timestamp(self, index):
+        return self.timestamps[index]
+
+    def get_pose(self, index):
+        return self.poses[index] if index < len(self.poses) else None
+
+    def __len__(self):
+        return len(self.timestamps)
+    
+class KittiDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        parser = KittiParser(dataset_path)
+        
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.color_paths_r = parser.color_paths_r
+        self.poses = parser.poses
+
+
+    def get_data(self, index):
+        image = self.parser.get_image(index)
+        timestamp = self.parser.get_timestamp(index)
+        pose = self.parser.get_pose(index)
+        return image, timestamp, pose
+
+    def display_image(self, index, cam=0):
+        image = self.parser.get_image(index, cam)
+        image_np = np.array(image)  # Convert PIL image to numpy array
+        cv2.imshow(f'Image {index} - Camera {cam}', image_np)
+        cv2.waitKey(0)
+        cv2.destroyAllWindows()
 
 def load_dataset(args, path, config):
     if config["Dataset"]["type"] == "tum":
@@ -528,5 +616,7 @@ def load_dataset(args, path, config):
         return EurocDataset(args, path, config)
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
+    elif config["Dataset"]["type"] == "kitti":
+        return KittiDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
