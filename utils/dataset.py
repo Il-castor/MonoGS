@@ -571,6 +571,21 @@ class KittiParser:
             }
             self.frames.append(frame)
 
+    # load poses from file without any transformation
+    # def load_poses_original(self, path):
+    #     # Loading poses from file without any transformation
+    #     # The poses are in world to camera reference system
+    #     self.poses = []
+    #     with open(path) as f:
+    #         data = [list(map(float, line.split())) for line in f]
+        
+    #     self.poses = []
+    #     for i in range(self.start_idx, len(data)):
+    #         T_w_c = np.eye(4)
+    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+    #         self.poses.append(T_w_c)
+
+    
     # vecchio codice 
     # def load_poses(self, path):
     #     self.poses = []
