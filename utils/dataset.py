@@ -8,10 +8,6 @@ import torch
 import trimesh
 from PIL import Image
 
-#import matplotlib.pyplot as plt
-from pathlib import Path
-
-
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
 try:
@@ -259,8 +255,6 @@ class MonocularDataset(BaseDataset):
         }
 
     def __getitem__(self, idx):
-        # print("FENI idx = ", idx)
-        # print("FENI self.poses = ", self.poses)
         color_path = self.color_paths[idx]
         pose = self.poses[idx]
 
@@ -270,14 +264,10 @@ class MonocularDataset(BaseDataset):
         if self.disorted:
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
 
-        # print("FENI ha la depth => ", self.has_depth)
         if self.has_depth:
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
-            #print("Feni mono depth = ", depth)
 
-        # image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-        
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -399,10 +389,6 @@ class StereoDataset(BaseDataset):
             .to(device=self.device, dtype=self.dtype)
         )
         pose = torch.from_numpy(pose).to(device=self.device)
-        
-        # plt.imshow(depth, cmap='jet')
-        # plt.colorbar()
-        # plt.show()
 
         return image, depth, pose
 
@@ -532,80 +518,108 @@ class RealsenseDataset(BaseDataset):
 
         return image, depth, pose
 
-class KittiParser:
-    def __init__(self, sequence_dir):
-        self.sequence_dir = Path(sequence_dir)
-        self.image_0_dir = self.sequence_dir / 'image_0'
-        self.image_1_dir = self.sequence_dir / 'image_1'
-        self.times_file = self.sequence_dir / 'times.txt'
-        self.poses_file = self.sequence_dir.parent / 'poses' / f'{self.sequence_dir.name}.txt'
-        print("utilizzo poses file chiamato ", self.poses_file)
-        self.timestamps = self._load_timestamps()
-        self.poses = self._load_poses()
 
-        self.color_paths = sorted(self.image_0_dir.glob('*.png'))
-        self.color_paths_r = sorted(self.image_1_dir.glob('*.png'))
+class KittiParser:
+    def __init__(self, input_folder, sequence, start_idx=0):
+        self.input_folder = input_folder
+        print(self.input_folder)
+        self.sequence = sequence
+        self.start_idx = start_idx
+        self.color_paths = sorted(
+            glob.glob(f"{self.input_folder}/image_2/*.png")
+        )
+        # print("color_path: ", self.color_paths)
+        self.load_timestamps(
+            f"{self.input_folder}/times.txt"
+        )
+        # print("timestamp ",self.timestamps)
+        self.load_poses(
+            f"{self.input_folder}/poses.txt"
+        )
+        # print("poses ", self.poses)
+        self.load_calibration(
+            f"{self.input_folder}/calib.txt"
+        )
+        # print("calib ", self.calib)
         self.n_img = len(self.color_paths)
         
-    def _load_timestamps(self):
-        with open(self.times_file, 'r') as file:
-            timestamps = [float(line.strip()) for line in file]
-        return timestamps
-
-    def _load_poses(self):
-        poses = []
-        if self.poses_file.exists():
-            with open(self.poses_file, 'r') as file:
-                for line in file:
-                    pose = np.fromstring(line.strip(), dtype=float, sep=' ')
-                    pose = pose.reshape(3, 4)  # Poses are 3x4 matrices
-                    pose = np.vstack((pose, [0, 0, 0, 1]))  # Convert to 4x4
-                    poses.append(pose)
-        else: 
-            print("ERROR No poses file found")
-            exit()
-        return poses
-
-    def get_image(self, index, cam=0):
-        if cam == 0:
-            image_file = self.image_0_dir / f'{index:06d}.png'
-        else:
-            image_file = self.image_1_dir / f'{index:06d}.png'
-        return Image.open(image_file)
-
-    def get_timestamp(self, index):
-        return self.timestamps[index]
-
-    def get_pose(self, index):
-        return self.poses[index] if index < len(self.poses) else None
-
-    def __len__(self):
-        return len(self.timestamps)
+    def load_timestamps(self, path):
+        with open(path) as f:
+            self.timestamps = [float(line.strip()) for line in f]
+        self.timestamps = self.timestamps[self.start_idx:]
     
-class KittiDataset(MonocularDataset):
+    
+    def load_poses(self, path):
+        self.poses = []
+        with open(path) as f:
+            data = [list(map(float, line.split())) for line in f]
+        
+        #matrice in WORD to CAMERA reference system
+        self.poses = []
+        for i in range(self.start_idx, len(data)):
+            T_w_c = np.eye(4)
+            T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+            self.poses.append(T_w_c)
+        
+        self.frames = []
+        #qua converto in CAMERA to WORD reference system
+        for i, T_w_c in enumerate(self.poses):
+            frame = {
+                "file_path": self.color_paths[i],
+                "timestamp": self.timestamps[i],
+                "transform_matrix": np.linalg.inv(T_w_c).tolist(),
+            }
+            self.frames.append(frame)
+
+    # vecchio codice 
+    # def load_poses(self, path):
+    #     self.poses = []
+    #     with open(path) as f:
+    #         data = [list(map(float, line.split())) for line in f]
+        
+    #     self.poses = []
+    #     self.camera_to_world_matrices = []  # New list to store camera-to-world matrices
+    #     for i in range(self.start_idx, len(data)):
+    #         T_w_c = np.eye(4)
+    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+    #         T_c_w = np.linalg.inv(T_w_c)  # Invert the matrix to get camera-to-world
+    #         self.poses.append(T_w_c)
+    #         self.camera_to_world_matrices.append(T_c_w)  # Store the inverted matrix
+
+    #     self.frames = []
+    #     for i, T_w_c in enumerate(self.poses):
+    #         frame = {
+    #         "file_path": self.color_paths[i],
+    #         "timestamp": self.timestamps[i],
+    #         "transform_matrix": T_w_c.tolist(),  # This now stores world-to-camera
+    #         "camera_to_world_matrix": self.camera_to_world_matrices[i].tolist()  # New field for camera-to-world
+    #     }
+    #     self.frames.append(frame)
+            
+    def load_calibration(self, path):
+        with open(path) as f:
+            lines = f.readlines()
+        
+        self.calib = {}
+        for line in lines:
+            key, value = line.split(":", 1)
+            self.calib[key] = np.array(list(map(float, value.split())))
+            
+    def get_frames(self):
+        return self.frames
+
+
+class KITTIDataset(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
-        parser = KittiParser(dataset_path)
-        
+        parser = KittiParser(dataset_path, 0)
         self.num_imgs = parser.n_img
+        assert self.num_imgs > 0, "ERROR: no images found in dataset"
         self.color_paths = parser.color_paths
-        self.color_paths_r = parser.color_paths_r
         self.poses = parser.poses
+        self.timestamps = parser.timestamps
 
-
-    def get_data(self, index):
-        image = self.parser.get_image(index)
-        timestamp = self.parser.get_timestamp(index)
-        pose = self.parser.get_pose(index)
-        return image, timestamp, pose
-
-    def display_image(self, index, cam=0):
-        image = self.parser.get_image(index, cam)
-        image_np = np.array(image)  # Convert PIL image to numpy array
-        cv2.imshow(f'Image {index} - Camera {cam}', image_np)
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
 
 def load_dataset(args, path, config):
     if config["Dataset"]["type"] == "tum":
@@ -617,6 +631,6 @@ def load_dataset(args, path, config):
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
     elif config["Dataset"]["type"] == "kitti":
-        return KittiDataset(args, path, config)
+        return KITTIDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
