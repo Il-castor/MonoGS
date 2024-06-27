@@ -20,7 +20,7 @@ from gaussian_splatting.utils.image_utils import psnr
 from gaussian_splatting.utils.loss_utils import ssim
 from gaussian_splatting.utils.system_utils import mkdir_p
 from utils.logging_utils import Log
-
+      
 
 def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ## Plot
@@ -46,9 +46,6 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     ) as f:
         json.dump(ape_stats, f, indent=4)
 
-    print("\tEseguito il dump")
-    # Creo il grafico e lo salvo in png
-    # Per funzionare ci vuole matplotlib==3.5.3, altrimenti da errore
     plot_mode = evo.tools.plot.PlotMode.xy
     fig = plt.figure()
     ax = evo.tools.plot.prepare_axis(fig, plot_mode)
@@ -64,15 +61,16 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
     )
     ax.legend()
     plt.savefig(os.path.join(plot_dir, "evo_2dplot_{}.png".format(str(label))), dpi=90)
-    
+
     return ape_stat
+
 
 
 def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False):
     trj_data = dict()
     # print("FENI kf_ids", kf_ids)
     # if len(kf_ids) == 0:
-    #     # print("ahhhhhhh No keyframes found")
+    #     print("ahhhhhhh No keyframes found")
     # else:
     #     print("ahhhhhhh Keyframes found")
     latest_frame_idx = kf_ids[-1] + 2 if final else kf_ids[-1] + 1
@@ -111,6 +109,9 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
     ) as f:
         json.dump(trj_data, f, indent=4)
 
+    #TODO DA SISTEMARE
+    save_estimated_poses_kitti(trj_est_np, os.path.join(plot_dir, f"kitti_trj_{label_evo}.txt"))
+    
     ate = evaluate_evo(
         poses_gt=trj_gt_np,
         poses_est=trj_est_np,
@@ -120,6 +121,21 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
     )
     wandb.log({"frame_idx": latest_frame_idx, "ate": ate})
     return ate
+
+
+def save_estimated_poses_kitti(poses, file_path):
+    """
+    Save the estimated trajectory in KITTI format.
+    
+    Args:
+    - poses (list of np.ndarray): List of 4x4 pose matrices.
+    - file_path (str): Path to the output file.
+    """
+    with open(file_path, 'w') as f:
+        for pose in poses:
+            pose_flat = pose[:3].reshape(-1)  # Flatten the 3x4 part of the pose
+            pose_str = ' '.join(map(str, pose_flat))
+            f.write(pose_str + '\n')
 
 
 def eval_rendering(
