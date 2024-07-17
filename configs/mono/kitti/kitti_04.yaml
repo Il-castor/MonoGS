@@ -3,7 +3,7 @@ inherit_from: "configs/mono/kitti/base_config.yaml"
 # cambiare il nome della sequenza => da 04 a 12
 
 Dataset:
-  # dataset_path: "/media/castor/Seagate-Basic/kitti_dataset/dataset/sequences/06"
+  # dataset_path: "/media/castor/Seagate-Basic/kitti_dataset/dataset/sequences/04"
   # devo fare 4, 6, 7
   dataset_path: "/media/castor/Seagate-Basic/kitti_dataset/data_odometry_color/dataset/sequences/04"
 
@@ -20,3 +20,4 @@ Dataset:
     width: 1226
     height: 370
     distorted: False
+  # start_idx: 100

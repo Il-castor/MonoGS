@@ -1,4 +1,4 @@
-inherit_from: "configs/mono/kitti/base_config.yaml"
+inherit_from: "configs/mono/kitti/base_config_06.yaml"
 
 # cambiare il nome della sequenza => da 04 a 12
 

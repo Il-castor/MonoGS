@@ -1,0 +1,78 @@
+Results:
+  save_results: True
+  save_dir: "results/kitti/06"
+  save_trj: True
+  save_trj_kf_intv: 10
+  use_gui: True
+  eval_rendering: False
+  use_wandb: False
+
+Dataset:
+  type: 'kitti'
+  sensor_type: 'monocular'
+  pcd_downsample: 64
+  pcd_downsample_init: 32
+  adaptive_pointsize: True
+  point_size: 0.01
+
+Training:
+  init_itr_num: 1500  # Increased for robust initialization
+  init_gaussian_update: 200  # More frequent updates during initialization
+  init_gaussian_reset: 700  # Adjusted reset frequency
+  init_gaussian_th: 0.01  # Adjusted threshold for Gaussian initialization
+  init_gaussian_extent: 30  # Extent adjustment for initial Gaussian
+  tracking_itr_num: 300  # Increased iterations for better tracking
+  mapping_itr_num: 350  # Increased iterations for better mapping
+  gaussian_update_every: 100  # More frequent Gaussian updates
+  gaussian_update_offset: 50  # Offset for Gaussian updates
+  gaussian_th: 0.8  # Threshold for Gaussian updates
+  gaussian_extent: 1.5  # Extent for Gaussian updates
+  gaussian_reset: 2500  # Reset frequency for Gaussian updates
+  size_threshold: 10  # Adjusted size threshold for keyframes
+  kf_interval: 3  # Reduced interval to capture more keyframes
+  window_size: 10  # Window size for optimization
+  pose_window: 5  # Pose window for optimization
+  edge_threshold: 1.2  # Edge detection threshold
+  rgb_boundary_threshold: 0.02  # RGB boundary detection threshold
+
+  kf_translation: 0.06  # Translation threshold for keyframes
+  kf_min_translation: 0.03  # Minimum translation for keyframes
+  kf_overlap: 0.9
+  kf_cutoff: 0.3
+  prune_mode: 'slam'
+  single_thread: False
+  spherical_harmonics: False
+
+  lr:
+    cam_rot_delta: 0.006  # Learning rate for camera rotation
+    cam_trans_delta: 0.004  # Learning rate for camera translation
+
+opt_params:
+  iterations: 4000  # Increased iterations for robust optimization
+  position_lr_init: 0.0012  # Adjusted initial learning rate
+  position_lr_final: 0.000001  # Adjusted final learning rate
+  position_lr_delay_mult: 0.01  # Delay multiplier for learning rate decay
+  position_lr_max_steps: 35000  # Max steps for learning rate decay
+  feature_lr: 0.0028  # Feature learning rate
+  opacity_lr: 0.04  # Opacity learning rate
+  scaling_lr: 0.001  # Scaling learning rate
+  rotation_lr: 0.001  # Rotation learning rate
+  percent_dense: 0.02  # Percentage of dense points
+  lambda_dssim: 0.3  # Weight for DSSIM loss
+  densification_interval: 200  # Densification interval
+  opacity_reset_interval: 3500  # Opacity reset interval
+  densify_from_iter: 1000  # Densify from iteration
+  densify_until_iter: 25000  # Densify until iteration
+  densify_grad_threshold: 0.0001  # Gradient threshold for densification
+
+model_params:
+  sh_degree: 0  # Spherical harmonics degree
+  source_path: ""  # Path to source model if any
+  model_path: ""  # Path to save/load model
+  resolution: -1  # Explicitly set to match KITTI image resolution
+  white_background: False  # Background setting
+  data_device: "cuda"  # Device for computation
+
+pipeline_params:
+  convert_SHs_python: False  # Convert SHs in Python
+  compute_cov3D_python: False  # Compute covariance in Python
