@@ -1,12 +1,14 @@
 import csv
 import glob
 import os
+from re import S
 
 import cv2
 import numpy as np
 import torch
 import trimesh
 from PIL import Image
+from pathlib import Path
 
 from gaussian_splatting.utils.graphics_utils import focal2fov
 
@@ -367,19 +369,24 @@ class StereoDataset(BaseDataset):
         color_path_r = self.color_paths_r[idx]
 
         pose = self.poses[idx]
-        image = cv2.imread(color_path, 0)
-        image_r = cv2.imread(color_path_r, 0)
+        # print(color_path)
+        # print(type(color_path))
+        image = cv2.imread(str(color_path), 0)
+        image_r = cv2.imread(str(color_path_r), 0)
         depth = None
         if self.disorted:
+            print("Eseguo rettifica")
             image = cv2.remap(image, self.map1x, self.map1y, cv2.INTER_LINEAR)
             image_r = cv2.remap(image_r, self.map1x_r, self.map1y_r, cv2.INTER_LINEAR)
         stereo = cv2.StereoSGBM_create(minDisparity=0, numDisparities=64, blockSize=20)
         stereo.setUniquenessRatio(40)
         disparity = stereo.compute(image, image_r) / 16.0
         disparity[disparity == 0] = 1e10
-        depth = 47.90639384423901 / (
+        # 47.90639384423901 is the baseline*fx from euroc 
+        # questo valore l'ho preso da kitti04-12.yaml di orbslam3 
+        depth = 379.8145 / (
             disparity
-        )  ## Following ORB-SLAM2 config, baseline*fx
+        )  ## Following ORB-SLAM3 config, baseline*fx
         depth[depth < 0] = 0
         image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
         image = (
@@ -389,9 +396,12 @@ class StereoDataset(BaseDataset):
             .to(device=self.device, dtype=self.dtype)
         )
         pose = torch.from_numpy(pose).to(device=self.device)
+        
+        # plt.imshow(depth, cmap='jet')
+        # plt.colorbar()
+        # plt.show()
 
         return image, depth, pose
-
 
 class TUMDataset(MonocularDataset):
     def __init__(self, args, path, config):
@@ -549,30 +559,43 @@ class KittiParser:
         self.timestamps = self.timestamps[self.start_idx:]
     
     
+    # def load_poses(self, path):
+    #     self.poses = []
+    #     with open(path) as f:
+    #         data = [list(map(float, line.split())) for line in f]
+        
+    #     #matrice in WORD to CAMERA reference system
+    #     self.poses = []
+    #     for i in range(self.start_idx, len(data)):
+    #         T_w_c = np.eye(4)
+    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+    #         self.poses.append(T_w_c)
+        
+    #     self.frames = []
+    #     #qua converto in CAMERA to WORD reference system
+    #     for i, T_w_c in enumerate(self.poses):
+    #         frame = {
+    #             "file_path": self.color_paths[i],
+    #             "timestamp": self.timestamps[i],
+    #             "transform_matrix": np.linalg.inv(T_w_c).tolist(),
+    #         }
+    #         self.frames.append(frame)
+    
     def load_poses(self, path):
+        """Return the inverse pose matrices from the file."""
         self.poses = []
-        with open(path) as f:
-            data = [list(map(float, line.split())) for line in f]
+        with open(path, 'r') as f:
+            for line in f: 
+                values = list(map(float, line.strip().split()))
+                pose = np.eye(4)
+                pose[0:3, 0:4] = np.array(values).reshape(3, 4)
+                inverted_pose = np.linalg.inv(pose)
+                self.poses.append(inverted_pose)
+
         
-        #matrice in WORD to CAMERA reference system
-        self.poses = []
-        for i in range(self.start_idx, len(data)):
-            T_w_c = np.eye(4)
-            T_w_c[:3, :] = np.reshape(data[i], (3, 4))
-            self.poses.append(T_w_c)
-        
-        self.frames = []
-        #qua converto in CAMERA to WORD reference system
-        for i, T_w_c in enumerate(self.poses):
-            frame = {
-                "file_path": self.color_paths[i],
-                "timestamp": self.timestamps[i],
-                "transform_matrix": np.linalg.inv(T_w_c).tolist(),
-            }
-            self.frames.append(frame)
 
     # load poses from file without any transformation
-    # def load_poses_original(self, path):
+    # def load_poses(self, path):
     #     # Loading poses from file without any transformation
     #     # The poses are in world to camera reference system
     #     self.poses = []
@@ -585,7 +608,7 @@ class KittiParser:
     #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
     #         self.poses.append(T_w_c)
 
-    
+
     # vecchio codice 
     # def load_poses(self, path):
     #     self.poses = []
@@ -635,6 +658,87 @@ class KITTIDataset(MonocularDataset):
         self.poses = parser.poses
         self.timestamps = parser.timestamps
 
+class KittiParserStereo:
+    def __init__(self, sequence_dir):
+        self.sequence_dir = Path(sequence_dir)
+        self.image_0_dir = self.sequence_dir / 'image_0'
+        self.image_1_dir = self.sequence_dir / 'image_1'
+        self.times_file = self.sequence_dir / 'times.txt'
+        print("sequenza: ", self.sequence_dir)
+        self.poses_file = self.sequence_dir / 'poses.txt'
+        print("Using poses file named", self.poses_file)
+        self.timestamps = self._load_timestamps()
+        self.poses = self.load_poses()
+        self.color_paths = sorted(self.image_0_dir.glob('*.png'))
+        self.color_paths_r = sorted(self.image_1_dir.glob('*.png'))
+        self.n_img = len(self.color_paths)
+
+    def _load_timestamps(self):
+        with open(self.times_file, 'r') as file:
+            timestamps = [float(line.strip()) for line in file]
+        return timestamps
+
+    # vecchio codice 
+    # def _load_poses(self):
+    #     poses = []
+    #     if self.poses_file.exists():
+    #         with open(self.poses_file, 'r') as file:
+    #             for line in file:
+    #                 pose = np.array(line.strip().split()).astype(np.float32).reshape(3, 4)  # Assuming poses are 3x4 matrices
+    #                 poses.append(pose)
+    #     else:
+    #         print(f"Warning: Poses file {self.poses_file} not found.")
+    #     return poses
+
+    def load_poses(self):
+        self.poses = []
+        with open(self.poses_file, 'r') as file:
+            for line in file:
+                values = list(map(float, line.strip().split()))
+                pose = np.eye(4)
+                pose[0:3, 0:4] = np.array(values).reshape(3, 4)
+                inverted_pose = np.linalg.inv(pose)
+                self.poses.append(inverted_pose)
+
+    def load_stereo_images(self, idx):
+        """Load a pair of stereo images by index."""
+        if idx < 0 or idx >= self.n_img:
+            raise ValueError("Index out of bounds")
+        left_image_path = self.color_paths[idx]
+        right_image_path = self.color_paths_r[idx]
+        # Here you would actually load the images using a library like OpenCV or PIL
+        # For example: left_image = cv2.imread(str(left_image_path))
+        return left_image_path, right_image_path
+
+    def get_data(self):
+        """Combine timestamps, poses, and image paths into a single structure."""
+        data = []
+        for idx in range(self.n_img):
+            timestamp = self.timestamps[idx]
+            pose = self.poses[idx] if idx < len(self.poses) else None
+            left_image_path, right_image_path = self.load_stereo_images(idx)
+            data_entry = {
+                'timestamp': timestamp,
+                'pose': pose,
+                'left_image_path': left_image_path,
+                'right_image_path': right_image_path,
+            }
+            data.append(data_entry)
+        return data
+    
+
+class KittiStereoDataset(StereoDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        parser = KittiParserStereo(dataset_path)
+
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.color_paths_r = parser.color_paths_r
+        self.poses = parser.poses
+
+
 
 def load_dataset(args, path, config):
     if config["Dataset"]["type"] == "tum":
@@ -646,6 +750,9 @@ def load_dataset(args, path, config):
     elif config["Dataset"]["type"] == "realsense":
         return RealsenseDataset(args, path, config)
     elif config["Dataset"]["type"] == "kitti":
+        print("sto usando file dataset.py")
         return KITTIDataset(args, path, config)
+    elif config["Dataset"]["type"] == "kitti_stereo":
+        return KittiStereoDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
