@@ -1,8 +1,8 @@
-import csv
-import glob
 import os
-from re import S
-
+import time
+from scipy.spatial.transform import Rotation as R
+import glob
+import csv
 import cv2
 import numpy as np
 import torch
@@ -276,6 +276,7 @@ class MonocularDataset(BaseDataset):
             .permute(2, 0, 1)
             .to(device=self.device, dtype=self.dtype)
         )
+        
         pose = torch.from_numpy(pose).to(device=self.device)
         return image, depth, pose
 
@@ -740,6 +741,79 @@ class KittiStereoDataset(StereoDataset):
 
 
 
+class BagParser:
+    def __init__(self, input_folder, start_idx=0):
+        self.input_folder = input_folder
+        self.start_idx = start_idx
+        
+        # Load image paths
+        self.color_paths = sorted(
+            glob.glob(f"{self.input_folder}/left/*.png")
+        )
+        
+        # Load timestamps
+        with open(f"{self.input_folder}/timestamp_foto_left.txt", 'r') as f:
+            self.timestamps = [int(line.strip()) for line in f]
+        
+        self.color_paths = self.color_paths[start_idx:]
+        self.timestamps = self.timestamps[start_idx:]
+        self.n_img = len(self.color_paths)
+        
+        # Load poses
+        self.load_poses(f"{self.input_folder}/poses.txt")
+
+    def associate(self, ts_pose):
+        pose_indices = []
+        for i in range(self.n_img):
+            color_ts = self.timestamps[i] / 1e9  # Convert to seconds
+            k = np.argmin(np.abs(ts_pose - color_ts))
+            pose_indices.append(k)
+        
+        return pose_indices
+
+    def load_poses(self, path):
+        self.poses = []
+        with open(path) as f:
+            reader = csv.reader(f)
+            data = [list(map(float, row)) for row in reader]
+        
+        data = np.array(data)
+        pose_ts = data[:, 0]
+        pose_indices = self.associate(pose_ts)
+        
+        frames = []
+        for i in range(self.n_img):
+            trans = data[pose_indices[i], 1:4]
+            quat = data[pose_indices[i], 4:8]
+            quat = quat[[1, 2, 3, 0]]  # Convert to w, x, y, z format
+            
+            T_w_i = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
+            T_w_i[:3, 3] = trans
+            
+            T_w_c = T_w_i  # Assuming no additional transformation
+
+            self.poses += [np.linalg.inv(T_w_c)]
+            # print("dataset poses: ", self.poses)
+            frame = {
+                "file_path": self.color_paths[i],
+                "transform_matrix": (np.linalg.inv(T_w_c)).tolist(),
+            }
+            
+            frames.append(frame)
+        
+        self.frames = frames
+
+class BagDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        parser = BagParser(dataset_path)
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.poses = parser.poses
+
+
+
 def load_dataset(args, path, config):
     if config["Dataset"]["type"] == "tum":
         return TUMDataset(args, path, config)
@@ -754,5 +828,7 @@ def load_dataset(args, path, config):
         return KITTIDataset(args, path, config)
     elif config["Dataset"]["type"] == "kitti_stereo":
         return KittiStereoDataset(args, path, config)
+    elif config["Dataset"]["type"] == "bag":
+        return BagDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")
