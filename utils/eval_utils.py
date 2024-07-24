@@ -21,16 +21,29 @@ from gaussian_splatting.utils.loss_utils import ssim
 from gaussian_splatting.utils.system_utils import mkdir_p
 from utils.logging_utils import Log
       
+def save_trajectory_kitti_format(trajectory, save_path):
+    with open(save_path, 'w') as f:
+        for pose in trajectory:
+            matrix = pose[:3, :4]
+            flat_matrix = matrix.flatten()
+            line = ' '.join(map(str, flat_matrix))
+            f.write(line + '\n')
+
 
 def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
+    
     ## Plot
+    # TODO watch how many samples  
+
+    
     traj_ref = PosePath3D(poses_se3=poses_gt)
     traj_est = PosePath3D(poses_se3=poses_est)
     traj_est_aligned = trajectory.align_trajectory(
-        traj_est, traj_ref, correct_scale=monocular
+        traj_est, traj_ref, correct_scale=True #oppure monocular
     )
 
     ## RMSE
+    # TODO investigate how to calculate the RMSE ATE 
     pose_relation = metrics.PoseRelation.translation_part
     data = (traj_ref, traj_est_aligned)
     ape_metric = metrics.APE(pose_relation)
@@ -45,6 +58,7 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
         encoding="utf-8",
     ) as f:
         json.dump(ape_stats, f, indent=4)
+
 
     plot_mode = evo.tools.plot.PlotMode.xy
     fig = plt.figure()
@@ -64,9 +78,10 @@ def evaluate_evo(poses_gt, poses_est, plot_dir, label, monocular=False):
 
     return ape_stat
 
-
+# c = 0
 
 def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False):
+    
     trj_data = dict()
     # print("FENI kf_ids", kf_ids)
     # if len(kf_ids) == 0:
@@ -85,20 +100,38 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
 
     for kf_id in kf_ids:
         kf = frames[kf_id]
+        # print(type(kf)) # mi restituisce <class 'utils.camera_utils.Camera'>
+        # print("lunghezza kf ", len(kf_ids))
         #La pose viene calcolata come l'inverso della matrice di rototraslazione
         pose_est = np.linalg.inv(gen_pose_matrix(kf.R, kf.T))
+        # pose_est = gen_pose_matrix(kf.R, kf.T)
         pose_gt = np.linalg.inv(gen_pose_matrix(kf.R_gt, kf.T_gt))
+        # pose_gt = gen_pose_matrix(kf.R_gt, kf.T_gt) 
+        # print("dimensione matrice pose_est", pose_est.shape)
+        # print("dimensione gt poses ", pose_gt.shape)
+        # print("stampo kf id", frames[kf_id].uid)
+        # print("valori matrice poses estimated \n", pose_est)
+        # print("valori matrice poses GROUND TRUTH \n", pose_gt)
+        # global c 
+        # print("contatore ", c)
+        # c += 1 
 
         trj_id.append(frames[kf_id].uid)
         trj_est.append(pose_est.tolist())
         trj_gt.append(pose_gt.tolist())
 
         trj_est_np.append(pose_est)
+        # print("valori matrice poses estimated \n", trj_est_np)
         trj_gt_np.append(pose_gt)
+        # print("valori matrice poses GROUND TRUTH \n", trj_gt_np)
 
+    # print("contatore ", c)
     trj_data["trj_id"] = trj_id
     trj_data["trj_est"] = trj_est
     trj_data["trj_gt"] = trj_gt
+
+    print("Len di trj_est_np ", (len(trj_est_np)))
+    print("Len di trj_gt_np ", (len(trj_gt_np)))
 
     plot_dir = os.path.join(save_dir, "plot")
     mkdir_p(plot_dir)
@@ -109,9 +142,14 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
     ) as f:
         json.dump(trj_data, f, indent=4)
 
-    #TODO DA SISTEMARE
-    save_estimated_poses_kitti(trj_est_np, os.path.join(plot_dir, f"kitti_trj_{label_evo}.txt"))
+    kitti_save_path = os.path.join(plot_dir, f"trj_{label_evo}_kitti.txt")
+    save_trajectory_kitti_format(trj_est_np, kitti_save_path)
     
+    # if final:
+    #     plot_dir_gt = os.path.join(save_dir, "plot_gt")
+    #     mkdir_p(plot_dir_gt)
+    #     gt_plot(plot_dir=plot_dir_gt, poses=trj_gt_np, label="gt")
+
     ate = evaluate_evo(
         poses_gt=trj_gt_np,
         poses_est=trj_est_np,
@@ -119,23 +157,12 @@ def eval_ate(frames, kf_ids, save_dir, iterations, final=False, monocular=False)
         label=label_evo,
         monocular=monocular,
     )
+
+    
+
     wandb.log({"frame_idx": latest_frame_idx, "ate": ate})
     return ate
 
-
-def save_estimated_poses_kitti(poses, file_path):
-    """
-    Save the estimated trajectory in KITTI format.
-    
-    Args:
-    - poses (list of np.ndarray): List of 4x4 pose matrices.
-    - file_path (str): Path to the output file.
-    """
-    with open(file_path, 'w') as f:
-        for pose in poses:
-            pose_flat = pose[:3].reshape(-1)  # Flatten the 3x4 part of the pose
-            pose_str = ' '.join(map(str, pose_flat))
-            f.write(pose_str + '\n')
 
 
 def eval_rendering(
