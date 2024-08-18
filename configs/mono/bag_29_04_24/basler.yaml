@@ -1,0 +1,18 @@
+inherit_from: "configs/mono/zed/base_config.yaml"
+
+Dataset:
+  dataset_path: "/media/castor/T9/tirocinio/1280-720-29-04-24/orario-estratte"
+
+  Calibration:
+    fx: 1091.540929289792
+    fy: 1081.218476731920
+    cx: 593.233312661265
+    cy: 469.319163891027
+    k1: -0.350446742056
+    k2: 0.131430199715
+    k3: 0.0
+    p1: 0.000000000000
+    p2: 0.000000000000
+    width: 1280
+    height: 720
+    distorted: true

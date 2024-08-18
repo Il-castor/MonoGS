@@ -1,5 +1,6 @@
 import os
 import time
+from datetime import datetime, timedelta
 from scipy.spatial.transform import Rotation as R
 import glob
 import csv
@@ -244,8 +245,10 @@ class MonocularDataset(BaseDataset):
             cv2.CV_32FC1,
         )
         # depth parameters
+        print("Controllo se ho la depth")
         self.has_depth = True if "depth_scale" in calibration.keys() else False
         self.depth_scale = calibration["depth_scale"] if self.has_depth else None
+        print("has_depth: ", self.has_depth)
 
         # Default scene scale
         nerf_normalization_radius = 5
@@ -270,6 +273,9 @@ class MonocularDataset(BaseDataset):
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path)) / self.depth_scale
 
+        if len(image.shape) == 2:
+            image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
+
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -287,6 +293,8 @@ class StereoDataset(BaseDataset):
         calibration = config["Dataset"]["Calibration"]
         self.width = calibration["width"]
         self.height = calibration["height"]
+
+        self.dept_path_folder = "/home/castor/Documents/kitti_depth"
 
         cam0raw = calibration["cam0"]["raw"]
         cam0opt = calibration["cam0"]["opt"]
@@ -387,9 +395,10 @@ class StereoDataset(BaseDataset):
         # questo valore l'ho preso da kitti04-12.yaml di orbslam3 
         depth = 379.8145 / (
             disparity
-        )  ## Following ORB-SLAM3 config, baseline*fx
+        )  ## Following ORB-SLAono3 config, baseline*fx
         depth[depth < 0] = 0
-        image = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        print("depth value ", depth)
+        image = cv2.cvtColor(image, cv2.COLOR_GRAY2RGB)
         image = (
             torch.from_numpy(image / 255.0)
             .clamp(0.0, 1.0)
@@ -401,6 +410,7 @@ class StereoDataset(BaseDataset):
         # plt.imshow(depth, cmap='jet')
         # plt.colorbar()
         # plt.show()
+        
 
         return image, depth, pose
 
@@ -426,6 +436,70 @@ class ReplicaDataset(MonocularDataset):
         self.poses = parser.poses
 
 
+class EuRoCParserMono(MonocularDataset):
+    def __init__(self, input_folder, start_idx=0):
+        self.input_folder = input_folder
+        self.start_idx = start_idx
+        self.color_paths = sorted(
+            glob.glob(f"{self.input_folder}/mav0/cam0/data/*.png")
+        )
+        
+        self.color_paths = self.color_paths[start_idx:]
+        self.n_img = len(self.color_paths)
+        self.load_poses(
+            f"{self.input_folder}/mav0/state_groundtruth_estimate0/data.csv"
+        )
+
+    def associate(self, ts_pose):
+        pose_indices = []
+        for i in range(self.n_img):
+            color_ts = float((self.color_paths[i].split("/")[-1]).split(".")[0])
+            k = np.argmin(np.abs(ts_pose - color_ts))
+            pose_indices.append(k)
+
+        return pose_indices
+
+    def load_poses(self, path):
+        self.poses = []
+        with open(path) as f:
+            reader = csv.reader(f)
+            header = next(reader)
+            data = [list(map(float, row)) for row in reader]
+        data = np.array(data)
+        T_i_c0 = np.array(
+          I want to create new parser for this dataset to adding in the previous code
+, i want monocular version   [
+                [0.0148655429818, -0.999880929698, 0.00414029679422, -0.0216401454975],
+                [0.999557249008, 0.0149672133247, 0.025715529948, -0.064676986768],
+                [-0.0257744366974, 0.00375618835797, 0.999660727178, 0.00981073058949],
+                [0.0, 0.0, 0.0, 1.0],
+            ]
+        )
+
+        pose_ts = data[:, 0]
+        pose_indices = self.associate(pose_ts)
+
+        frames = []
+        for i in range(self.n_img):
+            trans = data[pose_indices[i], 1:4]
+            quat = data[pose_indices[i], 4:8]
+            quat = quat[[1, 2, 3, 0]]
+            
+            
+            T_w_i = trimesh.transformations.quaternion_matrix(np.roll(quat, 1))
+            T_w_i[:3, 3] = trans
+            T_w_c = np.dot(T_w_i, T_i_c0)
+
+            self.poses += [np.linalg.inv(T_w_c)]
+
+            frame = {
+                "file_path": self.color_paths[i],
+                "transform_matrix": (np.linalg.inv(T_w_c)).tolist(),
+            }
+
+            frames.append(frame)
+        self.frames = frames
+
 class EurocDataset(StereoDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
@@ -436,6 +510,15 @@ class EurocDataset(StereoDataset):
         self.color_paths_r = parser.color_paths_r
         self.poses = parser.poses
 
+
+class EurocMonoDataset(MonocularDataset):
+    def __init__(self, args, path, config):
+        super().__init__(args, path, config)
+        dataset_path = config["Dataset"]["dataset_path"]
+        parser = EuRoCParserMono(dataset_path, start_idx=config["Dataset"]["start_idx"])
+        self.num_imgs = parser.n_img
+        self.color_paths = parser.color_paths
+        self.poses = parser.poses
 
 class RealsenseDataset(BaseDataset):
     def __init__(self, args, path, config):
@@ -530,122 +613,166 @@ class RealsenseDataset(BaseDataset):
         return image, depth, pose
 
 
+# class KittiParser:
+#     def __init__(self, input_folder, sequence, start_idx=0):
+#         self.input_folder = input_folder
+#         print(self.input_folder)
+#         self.sequence = sequence
+#         self.start_idx = start_idx
+#         self.color_paths = sorted(
+#             glob.glob(f"{self.input_folder}/image_2/*.png")
+#         )
+#         # print("color_path: ", self.color_paths)
+#         self.load_timestamps(
+#             f"{self.input_folder}/times.txt"
+#         )
+#         # print("timestamp ",self.timestamps)
+#         self.load_poses(
+#             f"{self.input_folder}/poses.txt"
+#         )
+#         # print("poses ", self.poses)
+#         self.load_calibration(
+#             f"{self.input_folder}/calib.txt"
+#         )
+#         # print("calib ", self.calib)
+#         self.n_img = len(self.color_paths)
+        
+#     def load_timestamps(self, path):
+#         with open(path) as f:
+#             self.timestamps = [float(line.strip()) for line in f]
+#         self.timestamps = self.timestamps[self.start_idx:]
+    
+    
+#     # def load_poses(self, path):
+#     #     self.poses = []
+#     #     with open(path) as f:
+#     #         data = [list(map(float, line.split())) for line in f]
+        
+#     #     #matrice in WORD to CAMERA reference system
+#     #     self.poses = []
+#     #     for i in range(self.start_idx, len(data)):
+#     #         T_w_c = np.eye(4)
+#     #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+#     #         self.poses.append(T_w_c)
+        
+#     #     self.frames = []
+#     #     #qua converto in CAMERA to WORD reference system
+#     #     for i, T_w_c in enumerate(self.poses):
+#     #         frame = {
+#     #             "file_path": self.color_paths[i],
+#     #             "timestamp": self.timestamps[i],
+#     #             "transform_matrix": np.linalg.inv(T_w_c).tolist(),
+#     #         }
+#     #         self.frames.append(frame)
+    
+#     # def load_poses(self, path):
+#     #     """Return the inverse pose matrices from the file.
+#     #         FUNZIONA"""
+#     #     self.poses = []
+#     #     with open(path, 'r') as f:
+#     #         for line in f: 
+#     #             values = list(map(float, line.strip().split()))
+#     #             pose = np.eye(4)
+#     #             pose[0:3, 0:4] = np.array(values).reshape(3, 4)
+#     #             print(pose)
+#     #             inverted_pose = np.linalg.inv(pose)
+#     #             self.poses.append(inverted_pose)
+
+#     def load_poses(self, path):
+#         poses = []
+#         with open(path, 'r') as f:
+#             for line in f:
+#                 pose = np.fromstring(line, sep=' ').reshape(3, 4)
+#                 pose = np.vstack([pose, [0, 0, 0, 1]])
+#                 pose_inv = np.linalg.inv(pose)
+#                 poses.append(pose_inv)
+#         return poses 
+
+#     # load poses from file without any transformation
+#     # def load_poses(self, path):
+#     #     # Loading poses from file without any transformation
+#     #     # The poses are in world to camera reference system
+#     #     self.poses = []
+#     #     with open(path) as f:
+#     #         data = [list(map(float, line.split())) for line in f]
+        
+#     #     self.poses = []
+#     #     for i in range(self.start_idx, len(data)):
+#     #         T_w_c = np.eye(4)
+#     #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+#     #         self.poses.append(T_w_c)
+
+
+#     # vecchio codice 
+#     # def load_poses(self, path):
+#     #     self.poses = []
+#     #     with open(path) as f:
+#     #         data = [list(map(float, line.split())) for line in f]
+        
+#     #     self.poses = []
+#     #     self.camera_to_world_matrices = []  # New list to store camera-to-world matrices
+#     #     for i in range(self.start_idx, len(data)):
+#     #         T_w_c = np.eye(4)
+#     #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
+#     #         T_c_w = np.linalg.inv(T_w_c)  # Invert the matrix to get camera-to-world
+#     #         self.poses.append(T_w_c)
+#     #         self.camera_to_world_matrices.append(T_c_w)  # Store the inverted matrix
+
+#     #     self.frames = []
+#     #     for i, T_w_c in enumerate(self.poses):
+#     #         frame = {
+#     #         "file_path": self.color_paths[i],
+#     #         "timestamp": self.timestamps[i],
+#     #         "transform_matrix": T_w_c.tolist(),  # This now stores world-to-camera
+#     #         "camera_to_world_matrix": self.camera_to_world_matrices[i].tolist()  # New field for camera-to-world
+#     #     }
+#     #     self.frames.append(frame)
+            
+#     def load_calibration(self, path):
+#         with open(path) as f:
+#             lines = f.readlines()
+        
+#         self.calib = {}
+#         for line in lines:
+#             key, value = line.split(":", 1)
+#             self.calib[key] = np.array(list(map(float, value.split())))
+            
+#     def get_frames(self):
+#         return self.frames
+
+
 class KittiParser:
-    def __init__(self, input_folder, sequence, start_idx=0):
+    def __init__(self, input_folder, start_idx=0):
         self.input_folder = input_folder
-        print(self.input_folder)
-        self.sequence = sequence
         self.start_idx = start_idx
         self.color_paths = sorted(
             glob.glob(f"{self.input_folder}/image_2/*.png")
         )
-        # print("color_path: ", self.color_paths)
-        self.load_timestamps(
-            f"{self.input_folder}/times.txt"
-        )
-        # print("timestamp ",self.timestamps)
-        self.load_poses(
-            f"{self.input_folder}/poses.txt"
-        )
-        # print("poses ", self.poses)
-        self.load_calibration(
-            f"{self.input_folder}/calib.txt"
-        )
-        # print("calib ", self.calib)
         self.n_img = len(self.color_paths)
-        
+        self.timestamp = self.load_timestamps(os.path.join(self.input_folder, "times.txt"))
+        self.poses = self.load_poses(os.path.join(self.input_folder, "poses.txt"))
+        # self.load_poses(os.path.join(self.input_folder, "poses.txt"))
+
+
     def load_timestamps(self, path):
-        with open(path) as f:
-            self.timestamps = [float(line.strip()) for line in f]
-        self.timestamps = self.timestamps[self.start_idx:]
+        with open(path, 'r') as f:
+            timestamps = [float(line.strip()) for line in f]
+        return timestamps
     
-    
-    # def load_poses(self, path):
-    #     self.poses = []
-    #     with open(path) as f:
-    #         data = [list(map(float, line.split())) for line in f]
-        
-    #     #matrice in WORD to CAMERA reference system
-    #     self.poses = []
-    #     for i in range(self.start_idx, len(data)):
-    #         T_w_c = np.eye(4)
-    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
-    #         self.poses.append(T_w_c)
-        
-    #     self.frames = []
-    #     #qua converto in CAMERA to WORD reference system
-    #     for i, T_w_c in enumerate(self.poses):
-    #         frame = {
-    #             "file_path": self.color_paths[i],
-    #             "timestamp": self.timestamps[i],
-    #             "transform_matrix": np.linalg.inv(T_w_c).tolist(),
-    #         }
-    #         self.frames.append(frame)
-    
+
     def load_poses(self, path):
-        """Return the inverse pose matrices from the file."""
+        """Return the inverse pose matrices from the file.
+             FUNZIONA"""
         self.poses = []
         with open(path, 'r') as f:
             for line in f: 
                 values = list(map(float, line.strip().split()))
                 pose = np.eye(4)
                 pose[0:3, 0:4] = np.array(values).reshape(3, 4)
+                # print(pose)
                 inverted_pose = np.linalg.inv(pose)
                 self.poses.append(inverted_pose)
-
-        
-
-    # load poses from file without any transformation
-    # def load_poses(self, path):
-    #     # Loading poses from file without any transformation
-    #     # The poses are in world to camera reference system
-    #     self.poses = []
-    #     with open(path) as f:
-    #         data = [list(map(float, line.split())) for line in f]
-        
-    #     self.poses = []
-    #     for i in range(self.start_idx, len(data)):
-    #         T_w_c = np.eye(4)
-    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
-    #         self.poses.append(T_w_c)
-
-
-    # vecchio codice 
-    # def load_poses(self, path):
-    #     self.poses = []
-    #     with open(path) as f:
-    #         data = [list(map(float, line.split())) for line in f]
-        
-    #     self.poses = []
-    #     self.camera_to_world_matrices = []  # New list to store camera-to-world matrices
-    #     for i in range(self.start_idx, len(data)):
-    #         T_w_c = np.eye(4)
-    #         T_w_c[:3, :] = np.reshape(data[i], (3, 4))
-    #         T_c_w = np.linalg.inv(T_w_c)  # Invert the matrix to get camera-to-world
-    #         self.poses.append(T_w_c)
-    #         self.camera_to_world_matrices.append(T_c_w)  # Store the inverted matrix
-
-    #     self.frames = []
-    #     for i, T_w_c in enumerate(self.poses):
-    #         frame = {
-    #         "file_path": self.color_paths[i],
-    #         "timestamp": self.timestamps[i],
-    #         "transform_matrix": T_w_c.tolist(),  # This now stores world-to-camera
-    #         "camera_to_world_matrix": self.camera_to_world_matrices[i].tolist()  # New field for camera-to-world
-    #     }
-    #     self.frames.append(frame)
-            
-    def load_calibration(self, path):
-        with open(path) as f:
-            lines = f.readlines()
-        
-        self.calib = {}
-        for line in lines:
-            key, value = line.split(":", 1)
-            self.calib[key] = np.array(list(map(float, value.split())))
-            
-    def get_frames(self):
-        return self.frames
+        return self.poses
 
 
 class KITTIDataset(MonocularDataset):
@@ -657,13 +784,13 @@ class KITTIDataset(MonocularDataset):
         assert self.num_imgs > 0, "ERROR: no images found in dataset"
         self.color_paths = parser.color_paths
         self.poses = parser.poses
-        self.timestamps = parser.timestamps
+        self.timestamps = parser.timestamp
 
 class KittiParserStereo:
     def __init__(self, sequence_dir):
         self.sequence_dir = Path(sequence_dir)
-        self.image_0_dir = self.sequence_dir / 'image_0'
-        self.image_1_dir = self.sequence_dir / 'image_1'
+        self.image_0_dir = self.sequence_dir / 'image_2'
+        self.image_1_dir = self.sequence_dir / 'image_3'
         self.times_file = self.sequence_dir / 'times.txt'
         print("sequenza: ", self.sequence_dir)
         self.poses_file = self.sequence_dir / 'poses.txt'
@@ -735,12 +862,12 @@ class KittiStereoDataset(StereoDataset):
         parser = KittiParserStereo(dataset_path)
 
         self.num_imgs = parser.n_img
+        print(self.num_imgs)
         self.color_paths = parser.color_paths
         self.color_paths_r = parser.color_paths_r
         self.poses = parser.poses
 
-
-
+# funzionante così così
 class BagParser:
     def __init__(self, input_folder, start_idx=0):
         self.input_folder = input_folder
@@ -758,7 +885,7 @@ class BagParser:
         self.color_paths = self.color_paths[start_idx:]
         self.timestamps = self.timestamps[start_idx:]
         self.n_img = len(self.color_paths)
-        
+        self.c = 0
         # Load poses
         self.load_poses(f"{self.input_folder}/poses.txt")
 
@@ -768,10 +895,11 @@ class BagParser:
             color_ts = self.timestamps[i] / 1e9  # Convert to seconds
             k = np.argmin(np.abs(ts_pose - color_ts))
             pose_indices.append(k)
-        
+        print("Len of Poses indices ", len(pose_indices))
         return pose_indices
 
     def load_poses(self, path):
+        self.c +=1
         self.poses = []
         with open(path) as f:
             reader = csv.reader(f)
@@ -793,6 +921,8 @@ class BagParser:
             T_w_c = T_w_i  # Assuming no additional transformation
 
             self.poses += [np.linalg.inv(T_w_c)]
+
+            
             # print("dataset poses: ", self.poses)
             frame = {
                 "file_path": self.color_paths[i],
@@ -801,16 +931,104 @@ class BagParser:
             
             frames.append(frame)
         
-        self.frames = frames
+        self.frames = frames 
+
+# class BagParser:
+#     def __init__(self, input_folder):
+#         self.input_folder = input_folder
+#         self.image_timestamps_file = os.path.join(self.input_folder, "timestamp_foto_left.txt")
+#         self.poses_file = os.path.join(self.input_folder, "poses.txt")
+#         self.images_folder = os.path.join(self.input_folder, "left")
+#         self.image_timestamps = []
+#         self.pose_data = []
+#         self.pose_timestamps = []
+#         self.associations = []
+#         self.data = []
+
+#         #variable for output 
+#         self.n_img = None
+#         self.color_paths = None
+#         self.poses = None 
+
+#     def load_image_timestamps(self):
+#         with open(self.image_timestamps_file, 'r') as f:
+#             self.image_timestamps = [int(line.strip()) for line in f]
+
+#     # TODO invertire la pose
+#     def load_pose_data(self):
+#         with open(self.poses_file, 'r') as f:
+#             for line in f:
+#                 parts = line.strip().split()
+#                 timestamp = float(parts[0])
+#                 pose = [float(p) for p in parts[1:]]
+#                 self.pose_data.append((timestamp, pose))
+#         # Convert pose timestamps to integer format (nanoseconds)
+#         self.pose_timestamps = [int(ts * 1e9) for ts, _ in self.pose_data]
+
+    
+
+#     def find_closest_pose_timestamp(self, image_ts):
+#         pose_ts_array = np.array(self.pose_timestamps)
+#         index = np.argmin(np.abs(pose_ts_array - image_ts))
+#         return index
+
+#     def associate_images_with_poses(self):
+#         for image_ts in self.image_timestamps:
+#             closest_index = self.find_closest_pose_timestamp(image_ts)
+#             closest_pose = self.pose_data[closest_index]
+#             image_filename = os.path.join(self.images_folder, f"{image_ts}.png")
+#             self.associations.append((image_filename, closest_pose))
+
+#     def save_associations(self):
+#         association_list = []
+        
+#         for image_filename, (pose_ts, pose) in self.associations:
+#             pose_str = ' '.join(map(str, pose))
+#             association_list.append(f"{image_filename} {pose_ts} {pose_str}")
+#         return association_list
+
+#     def load_and_associate(self):
+#         self.load_image_timestamps()
+#         self.load_pose_data()
+#         self.associate_images_with_poses()
+#         self.data = self.save_associations()
+        
+#         self.n_img = len(self.associations)
+        
+#         self.color_paths = [assoc[0] for assoc in self.associations]
+#         self.poses = [assoc[1][1] for assoc in self.associations]
+#         # print("CIAOOO ", self.poses)
+
+       
+
 
 class BagDataset(MonocularDataset):
     def __init__(self, args, path, config):
         super().__init__(args, path, config)
         dataset_path = config["Dataset"]["dataset_path"]
         parser = BagParser(dataset_path)
+        # parser.load_and_associate()
         self.num_imgs = parser.n_img
+        # print("numero di immagini ", self.num_imgs)
         self.color_paths = parser.color_paths
         self.poses = parser.poses
+        print("numero di volte chiamato load poses = ", parser.c)
+        print("numero di poses = ", len(self.poses))
+        # print(f"poses 1, 2, 3 = \n{self.poses[0]}\n{self.poses[1]}\n{self.poses[2]}")
+        with open("gt_letta.txt", "w") as f:
+            for pose in self.poses:
+                # Kitti format
+                pose_3x4 = pose[:3, :]
+                pose_str = ' '.join(map(str, pose_3x4.flatten()))
+                f.write(f"{pose_str}\n")
+
+        f.close()
+
+        print("leggi file gt_letta.txt")
+        
+        # print("CACCA ", type(self.poses))
+
+
 
 
 
@@ -830,5 +1048,7 @@ def load_dataset(args, path, config):
         return KittiStereoDataset(args, path, config)
     elif config["Dataset"]["type"] == "bag":
         return BagDataset(args, path, config)
+    elif config["Dataset"]["type"] == "euroc_mono":
+        return EurocMonoDataset(args, path, config)
     else:
         raise ValueError("Unknown dataset type")

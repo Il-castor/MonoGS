@@ -1,20 +1,21 @@
 ## SLAM parameters
 Results:
-  save_results: True
-  save_dir: "results/tum/rgbd"
-  save_trj: True
+  save_results: False
+  save_dir: "results/mono/euroc"
+  save_trj: False
   save_trj_kf_intv: 5
-  use_gui: False
+  use_gui: True
   eval_rendering: False
   use_wandb: False
 
 Dataset:
-  type: 'tum'
-  sensor_type: 'depth'
+  type: 'euroc_mono'
+  sensor_type: 'monocular'
   pcd_downsample: 128
   pcd_downsample_init: 32
-  adaptive_pointsize: True
-  point_size: 0.01
+  adaptive_pointsize: False
+  point_size: 0.1
+
 
 Training:
   #Initialization
