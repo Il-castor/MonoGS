@@ -1,6 +1,8 @@
 import os
 import sys
 import time
+import json
+
 from argparse import ArgumentParser
 from datetime import datetime
 
@@ -33,7 +35,7 @@ class SLAM:
 
         self.config = config
         self.save_dir = save_dir
-        model_params = munchify(config["model_params"])
+        model_params = munchify(config["model_params"]) #munch is a subclass of dict
         opt_params = munchify(config["opt_params"])
         pipeline_params = munchify(config["pipeline_params"])
         self.model_params, self.opt_params, self.pipeline_params = (
@@ -83,6 +85,10 @@ class SLAM:
         self.frontend = FrontEnd(self.config)
         self.backend = BackEnd(self.config)
 
+        # print("Stampo le code ")
+        # print("q main2vis queue: ", q_main2vis)
+        # print("q vis2main queue: ", q_vis2main)
+        # print("--------------------------")
         self.frontend.dataset = self.dataset
         self.frontend.background = self.background
         self.frontend.pipeline_params = self.pipeline_params
@@ -112,10 +118,7 @@ class SLAM:
             q_vis2main=q_vis2main,
         )
         
-
-        
         backend_process = mp.Process(target=self.backend.run)
-        
         
         if self.use_gui:
             gui_process = mp.Process(target=slam_gui.run, args=(self.params_gui,))
@@ -142,6 +145,13 @@ class SLAM:
         
         Log("Total time [s]", start.elapsed_time(end) * 0.001, tag="Eval")
         Log("Total FPS ", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
+        keyframe_times = self.frontend.get_keyframe_times()
+        print(type(keyframe_times))
+        
+        with open("keyframe_times.txt", "w") as file:
+            for time in keyframe_times:
+                file.write(str(time) + "\n")
+        Log("Write keyframe times to file keyframe_times.txt. Measure are in ms", tag="Eval")
 
         if self.eval_rendering:
             self.gaussians = self.frontend.gaussians
@@ -154,7 +164,9 @@ class SLAM:
                 final=True,
                 monocular=self.monocular,
             )
-
+            Log("CARICO tutto e plotto", tag="Eval")
+            
+            Log("Salvato tutto", tag="Eval")
             rendering_result = eval_rendering(
                 self.frontend.cameras,
                 self.gaussians,
@@ -222,7 +234,6 @@ class SLAM:
     def run(self):
         pass
 
-
 if __name__ == "__main__":
     # Set up command line argument parser
     parser = ArgumentParser(description="Training script parameters")
@@ -255,8 +266,15 @@ if __name__ == "__main__":
         mkdir_p(config["Results"]["save_dir"])
         current_datetime = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
         path = config["Dataset"]["dataset_path"].split("/")
+        
+        #i want to add the filename of dataset to save_dir variable
+        
+        dataset_name = config["Dataset"]["dataset_path"]
+        
+        dataset_name = dataset_name.split("/")[-2]
+        
         save_dir = os.path.join(
-            config["Results"]["save_dir"], path[-3] + "_" + path[-2], current_datetime
+            config["Results"]["save_dir"], path[-3] + "_" + path[-2], current_datetime, dataset_name
         )
         tmp = args.config
         tmp = tmp.split(".")[0]
