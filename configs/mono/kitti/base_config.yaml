@@ -1,9 +1,9 @@
 Results:
   save_results: True
-  save_dir: "results/kitti/prova"
+  save_dir: "results/kitti-mono"
   save_trj: True
-  save_trj_kf_intv: 8
-  use_gui: True
+  save_trj_kf_intv: 10
+  use_gui: False
   eval_rendering: False
   use_wandb: False
 

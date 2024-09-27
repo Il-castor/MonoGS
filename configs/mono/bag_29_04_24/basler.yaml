@@ -1,4 +1,4 @@
-inherit_from: "configs/mono/zed/base_config.yaml"
+inherit_from: "configs/mono/bag_29_04_24/base_config.yaml"
 
 Dataset:
   dataset_path: "/media/castor/T9/tirocinio/1280-720-29-04-24/orario-estratte"

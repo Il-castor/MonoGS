@@ -1,7 +1,7 @@
 inherit_from: "configs/mono/tum/base_config.yaml"
 
 Dataset:
-  dataset_path: "datasets/tum/rgbd_dataset_freiburg1_teddy"
+  dataset_path: "datasets/tum/rgbd_dataset_freiburg1_floor"
   Calibration:
     fx: 517.306408
     fy: 516.469215
@@ -14,8 +14,6 @@ Dataset:
     k3: 1.163314
     width: 640
     height: 480
-    depth_scale: 5000.0
+    # depth_scale: 5000.0
     distorted: True
-
-
 

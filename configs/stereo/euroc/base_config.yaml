@@ -1,17 +1,17 @@
 ## SLAM parameters
 Results:
-  save_results: False
-  save_dir: "results"
-  save_trj: False
+  save_results: True
+  save_dir: "results/stereo/euroc"
+  save_trj: True
   save_trj_kf_intv: 5
-  use_gui: True
+  use_gui: False
   eval_rendering: False
   use_wandb: False
 
 Dataset:
   type: 'euroc'
   sensor_type: 'stereo'
-  pcd_downsample: 128
+  pcd_downsample: 256
   pcd_downsample_init: 32
   adaptive_pointsize: False
   point_size: 0.1

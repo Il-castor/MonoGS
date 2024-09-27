@@ -1,0 +1,21 @@
+inherit_from: "configs/mono/zed/base_config.yaml"
+
+# Config for ZED stereo camera
+# fps is 15 
+Dataset:
+  dataset_path: "datasets/zed2/zed2"
+
+  Calibration:
+    fx: 265.2846374511719
+    fy: 265.2846374511719
+    cx: 329.34228515625
+    cy: 179.8889923095703
+    k1: 0.0
+    k2: 0.0
+    k3: 0.0
+    p1: 0.0
+    p2: 0.0
+    width: 640
+    height: 360
+    # depth_scale: 1
+    distorted: false

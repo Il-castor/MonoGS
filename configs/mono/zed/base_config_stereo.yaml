@@ -1,6 +1,6 @@
 Results:
   save_results: True
-  save_dir: "results/zed2"
+  save_dir: "results/stereo-zed2"
   save_trj: True
   save_trj_kf_intv: 10
   use_gui: True
@@ -8,8 +8,8 @@ Results:
   use_wandb: False
 
 Dataset:
-  type: 'zed'
-  sensor_type: 'monocular'
+  type: 'zed-stereo'
+  sensor_type: 'stereo'
   pcd_downsample: 64
   pcd_downsample_init: 32
   adaptive_pointsize: True

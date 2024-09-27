@@ -1,26 +1,30 @@
+## SLAM parameters
 Results:
   save_results: True
-  save_dir: "results/tum/mono_depth"
+  save_dir: "results/stereo/kitti/04"
   save_trj: True
-  save_trj_kf_intv: 5 
+  save_trj_kf_intv: 5
   use_gui: True
   eval_rendering: False
   use_wandb: False
 
 Dataset:
-  type: 'tum'
-  sensor_type: 'monocular'
-  pcd_downsample: 64
+  type: 'kitti_stereo'
+  sensor_type: 'stereo'
+  pcd_downsample: 128
   pcd_downsample_init: 32
-  adaptive_pointsize: True
-  point_size: 0.01
+  adaptive_pointsize: False
+  point_size: 0.1
+
 
 Training:
+  #Initialization
   init_itr_num: 1050
   init_gaussian_update: 100
   init_gaussian_reset: 500
   init_gaussian_th: 0.005
   init_gaussian_extent: 30
+  # Tracking and Mapping
   tracking_itr_num: 100
   mapping_itr_num: 150
   gaussian_update_every: 150
@@ -34,7 +38,7 @@ Training:
   pose_window: 3
   edge_threshold: 1.1
   rgb_boundary_threshold: 0.01
-
+  alpha: 0.9
   kf_translation: 0.08
   kf_min_translation: 0.05
   kf_overlap: 0.9
@@ -42,14 +46,16 @@ Training:
   prune_mode: 'slam'
   single_thread: False
   spherical_harmonics: False
-
   lr:
     cam_rot_delta: 0.003
     cam_trans_delta: 0.001
 
+
+
+## 3DGS default parameters
 opt_params:
   iterations: 30000
-  position_lr_init: 0.0016
+  position_lr_init: 0.00016
   position_lr_final: 0.0000016
   position_lr_delay_mult: 0.01
   position_lr_max_steps: 30000
