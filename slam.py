@@ -1,8 +1,6 @@
 import os
 import sys
-import time
-import json
-
+import time 
 from argparse import ArgumentParser
 from datetime import datetime
 
@@ -123,6 +121,8 @@ class SLAM:
         if self.use_gui:
             gui_process = mp.Process(target=slam_gui.run, args=(self.params_gui,))
             gui_process.start()
+            print("ciao")
+            import time
             time.sleep(5)
 
         backend_process.start()
@@ -146,11 +146,10 @@ class SLAM:
         Log("Total time [s]", start.elapsed_time(end) * 0.001, tag="Eval")
         Log("Total FPS ", N_frames / (start.elapsed_time(end) * 0.001), tag="Eval")
         keyframe_times = self.frontend.get_keyframe_times()
-        print(type(keyframe_times))
         
-        with open("keyframe_times.txt", "w") as file:
+        with open("keyframe_times_ms.txt", "w") as file:
             for time in keyframe_times:
-                file.write(str(time) + "\n")
+                file.write(str(time) + "\n")    
         Log("Write keyframe times to file keyframe_times.txt. Measure are in ms", tag="Eval")
 
         if self.eval_rendering:
@@ -265,13 +264,10 @@ if __name__ == "__main__":
     if config["Results"]["save_results"]:
         mkdir_p(config["Results"]["save_dir"])
         current_datetime = datetime.now().strftime("%Y-%m-%d-%H-%M-%S")
-        path = config["Dataset"]["dataset_path"].split("/")
-        
-        #i want to add the filename of dataset to save_dir variable
-        
+        path = config["Dataset"]["dataset_path"].split("/")  
         dataset_name = config["Dataset"]["dataset_path"]
         
-        dataset_name = dataset_name.split("/")[-2]
+        dataset_name = dataset_name.split("/")[-1]
         
         save_dir = os.path.join(
             config["Results"]["save_dir"], path[-3] + "_" + path[-2], current_datetime, dataset_name

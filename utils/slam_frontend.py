@@ -14,6 +14,7 @@ from utils.multiprocessing_utils import clone_obj
 from utils.pose_utils import update_pose
 from utils.slam_utils import get_loss_tracking, get_median_depth
 
+keyframe_times = [] 
 
 class FrontEnd(mp.Process):
     def __init__(self, config):
@@ -65,7 +66,9 @@ class FrontEnd(mp.Process):
             if depth is None:
                 initial_depth = 2 * torch.ones(1, gt_img.shape[1], gt_img.shape[2])
                 initial_depth += torch.randn_like(initial_depth) * 0.3
+               
             else:
+                print("depth is not None")
                 depth = depth.detach().clone()
                 opacity = opacity.detach()
                 use_inv_depth = False
@@ -167,6 +170,7 @@ class FrontEnd(mp.Process):
         pose_optimizer = torch.optim.Adam(opt_params)
          
         for tracking_itr in range(self.tracking_itr_num):
+            # torch.cuda.empty_cache() # Add this line to clear CUDA cache and free memory
             render_pkg = render( # rendero la scena 
                 viewpoint, self.gaussians, self.pipeline_params, self.background
             )
@@ -175,6 +179,7 @@ class FrontEnd(mp.Process):
                 render_pkg["depth"],
                 render_pkg["opacity"],
             )
+            
             pose_optimizer.zero_grad()
             loss_tracking = get_loss_tracking(
                 self.config, image, depth, opacity, viewpoint
@@ -321,6 +326,10 @@ class FrontEnd(mp.Process):
         if cur_frame_idx % 10 == 0:
             torch.cuda.empty_cache()
 
+    
+    def get_keyframe_times(self):
+        return keyframe_times
+    
     def run(self):
         #print("INIZIO ", self.kf_indices)
         cur_frame_idx = 0
@@ -337,8 +346,11 @@ class FrontEnd(mp.Process):
         projection_matrix = projection_matrix.to(device=self.device)
         tic = torch.cuda.Event(enable_timing=True)
         toc = torch.cuda.Event(enable_timing=True)
-
+        # c = 0
+        # b = 0
         while True:
+            # TODO add taking time 
+            # start = time.time()
             if self.q_vis2main.empty():
                 if self.pause:
                     continue
@@ -351,6 +363,8 @@ class FrontEnd(mp.Process):
                 else:
                     self.backend_queue.put(["unpause"])
 
+            start = time.perf_counter()
+
             if self.frontend_queue.empty():
                 # print("1")
                 # print("len self.dataset = ", len(self.dataset))
@@ -361,6 +375,7 @@ class FrontEnd(mp.Process):
                     if self.save_results:
                             # print("3")
                             # print("slam frontend, kf_indices: ", self.kf_indices)
+                        # print("slam frontend, type cameras: ", type(self.cameras))
                         eval_ate(
                             self.cameras,
                             self.kf_indices,
@@ -387,11 +402,12 @@ class FrontEnd(mp.Process):
                     continue
                 
                 # setto il punto di vista della camera al current frame 
-                start_camera_time = time.perf_counter()
+                # print("peppa self.dataset is type of ", type(self.dataset))
                 viewpoint = Camera.init_from_dataset(
                     self.dataset, cur_frame_idx, projection_matrix
                 )
                 viewpoint.compute_grad_mask(self.config)
+                # print("type of viewpoint ", type(viewpoint))
 
                 self.cameras[cur_frame_idx] = viewpoint
                 # end_camera_time = time.perf_counter()
@@ -489,14 +505,15 @@ class FrontEnd(mp.Process):
                     self.cleanup(cur_frame_idx)
                 cur_frame_idx += 1
 
-                if (
-                    self.save_results
-                    and self.save_trj
-                    and create_kf
-                    and len(self.kf_indices) % self.save_trj_kf_intv == 0
-                ):
+                if ( self.save_results and self.save_trj and create_kf and len(self.kf_indices) % self.save_trj_kf_intv == 0 ):
                     Log("Evaluating ATE at frame: ", cur_frame_idx)
                     # start_time_eval = time.perf_counter()
+                    # print("ciccia self.camera type = ", type(self.cameras))
+                    # print("self.camera type value are: ", self.cameras)
+                    # print("self.kf_indices type = ", type(self.kf_indices))
+                    # self.append_data_to_file('cameras_data.json', self.cameras)
+                    # self.append_data_to_file('kf_indices_data.json', self.kf_indices)
+                    # print("Funzione chiamata")
                     eval_ate(
                         self.cameras,
                         self.kf_indices,
@@ -508,12 +525,17 @@ class FrontEnd(mp.Process):
                     # print("ATE evaluation time: [s]", end_time_eval - start_time_eval)
                 toc.record()
                 torch.cuda.synchronize()
+                # Log("tic and toc duration: ", tic.elapsed_time(toc) / 1000.0, tag="Eval")
+                # with open('time_tic_toc.txt', 'a') as file:
+                #     file.write(str(tic.elapsed_time(toc) / 1000.0) + '\n')
                 if create_kf:
                     # throttle at 3fps when keyframe is added
                     #print("sono if create_kf ")
                     duration = tic.elapsed_time(toc)
+                    # b += 1
+                    # print("cont duration = ", b)
                     # print("Duration SLAM Frontend = ", tic.elapsed_time(toc) / 1000.0)
-                    time.sleep(max(0.01, 1.0 / 3.0 - duration / 1000))
+                    time.sleep(max(0.01, 1.0 / 3.0 - duration / 1000))  
             else:
                 data = self.frontend_queue.get()
                 if data[0] == "sync_backend":
@@ -530,3 +552,8 @@ class FrontEnd(mp.Process):
                 elif data[0] == "stop":
                     Log("Frontend Stopped.")
                     break
+            end = time.perf_counter()
+            keyframes_duration = (end - start) * 1000 # so this values is in milliseconds
+            
+            keyframe_times.append(keyframes_duration)
+            

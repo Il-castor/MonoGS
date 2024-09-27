@@ -94,8 +94,7 @@ class BackEnd(mp.Process):
         for mapping_iteration in range(self.init_itr_num):
             self.iteration_count += 1
             render_pkg = render(
-                viewpoint, self.gaussians, self.pipeline_params, self.background
-            )
+                viewpoint, self.gaussians, self.pipeline_params, self.background)
             (
                 image,
                 viewspace_point_tensor,
@@ -373,6 +372,8 @@ class BackEnd(mp.Process):
 
             gt_image = viewpoint_cam.original_image.cuda()
             Ll1 = l1_loss(image, gt_image)
+            #print("backend L1 loss ", Ll1)
+            
             loss = (1.0 - self.opt_params.lambda_dssim) * (
                 Ll1
             ) + self.opt_params.lambda_dssim * (1.0 - ssim(image, gt_image))
