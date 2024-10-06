@@ -1,4 +1,4 @@
-inherit_from: "configs/mono/tum/base_config.yaml"
+inherit_from: "configs/mono/tum_no_depth/base_config.yaml"
 
 Dataset:
   dataset_path: "datasets/tum/rgbd_dataset_freiburg1_floor"

@@ -64,11 +64,13 @@ class FrontEnd(mp.Process):
         valid_rgb = (gt_img.sum(dim=0) > rgb_boundary_threshold)[None]
         if self.monocular:
             if depth is None:
+                
                 initial_depth = 2 * torch.ones(1, gt_img.shape[1], gt_img.shape[2])
                 initial_depth += torch.randn_like(initial_depth) * 0.3
-               
+                # print("turo")
             else:
-                print("depth is not None")
+                
+                # print("fenicottero")
                 depth = depth.detach().clone()
                 opacity = opacity.detach()
                 use_inv_depth = False
@@ -363,7 +365,7 @@ class FrontEnd(mp.Process):
                 else:
                     self.backend_queue.put(["unpause"])
 
-            start = time.perf_counter()
+            
 
             if self.frontend_queue.empty():
                 # print("1")
@@ -403,6 +405,8 @@ class FrontEnd(mp.Process):
                 
                 # setto il punto di vista della camera al current frame 
                 # print("peppa self.dataset is type of ", type(self.dataset))
+                start = time.perf_counter()
+
                 viewpoint = Camera.init_from_dataset(
                     self.dataset, cur_frame_idx, projection_matrix
                 )
@@ -536,6 +540,11 @@ class FrontEnd(mp.Process):
                     # print("cont duration = ", b)
                     # print("Duration SLAM Frontend = ", tic.elapsed_time(toc) / 1000.0)
                     time.sleep(max(0.01, 1.0 / 3.0 - duration / 1000))  
+                
+                end = time.perf_counter()
+                keyframes_duration = (end - start) * 1000 # so this values is in milliseconds
+            
+                keyframe_times.append(keyframes_duration)
             else:
                 data = self.frontend_queue.get()
                 if data[0] == "sync_backend":
@@ -552,8 +561,5 @@ class FrontEnd(mp.Process):
                 elif data[0] == "stop":
                     Log("Frontend Stopped.")
                     break
-            end = time.perf_counter()
-            keyframes_duration = (end - start) * 1000 # so this values is in milliseconds
             
-            keyframe_times.append(keyframes_duration)
             

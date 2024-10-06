@@ -288,7 +288,7 @@ class MonocularDataset(BaseDataset):
             .permute(2, 0, 1)
             .to(device=self.device, dtype=self.dtype)
         )
-        
+        # print("dataset depth ", depth)
         pose = torch.from_numpy(pose).to(device=self.device)
         return image, depth, pose
 

@@ -1,6 +1,5 @@
 import os
 import sys
-import time 
 from argparse import ArgumentParser
 from datetime import datetime
 
@@ -21,7 +20,7 @@ from utils.multiprocessing_utils import FakeQueue
 from utils.slam_backend import BackEnd
 from utils.slam_frontend import FrontEnd
 
-
+import time 
 class SLAM:
     def __init__(self, config, save_dir=None):
         
@@ -121,8 +120,8 @@ class SLAM:
         if self.use_gui:
             gui_process = mp.Process(target=slam_gui.run, args=(self.params_gui,))
             gui_process.start()
-            print("ciao")
-            import time
+            print("Start!")
+            
             time.sleep(5)
 
         backend_process.start()
@@ -148,8 +147,8 @@ class SLAM:
         keyframe_times = self.frontend.get_keyframe_times()
         
         with open("keyframe_times_ms.txt", "w") as file:
-            for time in keyframe_times:
-                file.write(str(time) + "\n")    
+            for times in keyframe_times:
+                file.write(str(times) + "\n")    
         Log("Write keyframe times to file keyframe_times.txt. Measure are in ms", tag="Eval")
 
         if self.eval_rendering:

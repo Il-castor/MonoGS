@@ -1,4 +1,4 @@
-inherit_from: "configs/mono/tum/base_config.yaml"
+inherit_from: "configs/mono/tum_no_depth/base_config.yaml"
 
 Dataset:
   dataset_path: "datasets/tum/rgbd_dataset_freiburg1_desk/"
@@ -14,7 +14,6 @@ Dataset:
     k3: 1.163314
     width: 640
     height: 480
-    # depth_scale: 5000.0
     distorted: True
 
 
